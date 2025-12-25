@@ -8,7 +8,34 @@
     "enabled": true,
     "head_sampling_rate": 1,
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "crow-core-user-service-db",
+      "database_id": "d6ed92cd-08ef-4f5a-8c00-8c5f59ca57d5"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2_BUCKET",
+      "bucket_name": "crow-core-user-service-store"
+    }
+  ],
   "env": {
-    "dev": {},
+    "dev": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "crow-core-user-service-db-dev",
+          "database_id": "7cdd3d3a-0632-48c0-8cdd-e5fe5099d7e2"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "R2_BUCKET",
+          "bucket_name": "crow-core-user-service-store-dev"
+        }
+      ]
+    },
   },
 }
