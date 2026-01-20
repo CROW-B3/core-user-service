@@ -64,6 +64,8 @@ app.post('/api/v1/user-builders/:id/finalize', async c => {
     role,
     authId,
   });
+  return builderId;
+};
 
   // Create and store user
   const userId = crypto.randomUUID();
