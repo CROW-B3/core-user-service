@@ -3,7 +3,16 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
-import { HelloWorldRoute } from './routes';
+import * as schema from './db/schema';
+import {
+  CreateUserBuilderRoute,
+  FinalizeUserBuilderRoute,
+  GetUserBuilderRoute,
+  GetUserByAuthIdRoute,
+  GetUserPermissionsRoute,
+  GetUserRoute,
+  HelloWorldRoute,
+} from './routes';
 
 // In-memory user storage for local development
 // Maps authId -> user object
@@ -147,4 +156,5 @@ app.doc('/docs', {
     title: 'User Service API',
   },
 });
+
 export default app;
