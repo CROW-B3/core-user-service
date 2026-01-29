@@ -123,3 +123,32 @@ export const GetUserPermissionsRoute = createRoute({
     },
   },
 });
+
+export const CheckEmailsExistRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/users/check-emails',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            emails: z.array(z.string().email()),
+            organizationId: z.string(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            existingEmails: z.array(z.string()),
+          }),
+        },
+      },
+      description: 'List of emails that already exist as users',
+    },
+  },
+});
