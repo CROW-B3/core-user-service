@@ -14,6 +14,21 @@ import {
   GetUserRoute,
   HelloWorldRoute,
 } from './routes';
+import {
+  createUserBuilderInDatabase,
+  createUserFromBuilder,
+  fetchUserBuilderById,
+  markUserBuilderAsActive,
+} from './services/user-builder-service';
+import {
+  checkEmailsExist,
+  fetchUserByBetterAuthId,
+  fetchUserById,
+} from './services/user-service';
+import {
+  formatUserBuilderResponse,
+  formatUserResponse,
+} from './utils/formatters';
 
 // In-memory user storage for local development
 // Maps authId -> user object
@@ -154,14 +169,10 @@ app.post('/api/v1/users/check-emails', async c => {
 
 app.openapi(CheckEmailsExistRoute, async context => {
   const database = drizzle(context.env.DB, { schema });
-  const { emails, organizationId: _organizationId } = context.req.valid('json');
+  const { emails } = context.req.valid('json');
 
-  const existingUsers = await database
-    .select({ email: schema.user.email })
-    .from(schema.user)
-    .where(inArray(schema.user.email, emails));
+  const existingEmails = await checkEmailsExist(database, emails);
 
-  const existingEmails = existingUsers.map(user => user.email);
   return context.json({ existingEmails });
 });
 
