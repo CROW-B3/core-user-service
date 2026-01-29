@@ -5,6 +5,7 @@ import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
 import * as schema from './db/schema';
 import {
+  CheckEmailsExistRoute,
   CreateUserBuilderRoute,
   FinalizeUserBuilderRoute,
   GetUserBuilderRoute,
@@ -149,6 +150,19 @@ app.post('/api/v1/users/check-emails', async c => {
     },
     200
   );
+});
+
+app.openapi(CheckEmailsExistRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const { emails, organizationId: _organizationId } = context.req.valid('json');
+
+  const existingUsers = await database
+    .select({ email: schema.user.email })
+    .from(schema.user)
+    .where(inArray(schema.user.email, emails));
+
+  const existingEmails = existingUsers.map(user => user.email);
+  return context.json({ existingEmails });
 });
 
 app.doc('/docs', {
