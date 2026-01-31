@@ -13,6 +13,8 @@ import {
   GetUserPermissionsRoute,
   GetUserRoute,
   HelloWorldRoute,
+  UpdateUserProfileRoute,
+  UploadProfilePictureRoute,
 } from './routes';
 import {
   createUserBuilderInDatabase,
@@ -24,6 +26,8 @@ import {
   checkEmailsExist,
   fetchUserByBetterAuthId,
   fetchUserById,
+  updateUserProfile,
+  uploadProfilePictureToR2,
 } from './services/user-service';
 import {
   formatUserBuilderResponse,
@@ -174,6 +178,59 @@ app.openapi(CheckEmailsExistRoute, async context => {
   const existingEmails = await checkEmailsExist(database, emails);
 
   return context.json({ existingEmails });
+});
+
+app.openapi(UploadProfilePictureRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const { id } = context.req.valid('param');
+
+  const user = await fetchUserById(database, id);
+  if (!user) {
+    return context.json({ error: 'User not found' }, 404);
+  }
+
+  const formData = await context.req.formData();
+  const file = formData.get('file') as File;
+
+  if (!file) {
+    return context.json({ error: 'No file provided' }, 400);
+  }
+
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    return context.json({ error: 'File size exceeds 5MB limit' }, 400);
+  }
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    return context.json(
+      { error: 'Invalid file type. Only JPG, PNG, and WebP are allowed' },
+      400
+    );
+  }
+
+  const url = await uploadProfilePictureToR2(context.env.R2_BUCKET, id, file);
+
+  return context.json({ url });
+});
+
+app.openapi(UpdateUserProfileRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const { id } = context.req.valid('param');
+  const body = context.req.valid('json');
+
+  const user = await fetchUserById(database, id);
+  if (!user) {
+    return context.json({ error: 'User not found' }, 404);
+  }
+
+  const updatedUser = await updateUserProfile(database, id, body);
+
+  if (!updatedUser) {
+    return context.json({ error: 'Failed to update profile' }, 500);
+  }
+
+  return context.json(formatUserResponse(updatedUser));
 });
 
 app.doc('/docs', {
