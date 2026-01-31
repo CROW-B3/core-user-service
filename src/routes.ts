@@ -4,6 +4,8 @@ import {
   FinalizeUserBuilderSchema,
   HelloWorldSchema,
   PermissionsSchema,
+  ProfilePictureUploadResponseSchema,
+  UpdateUserProfileSchema,
   UserBuilderSchema,
   UserSchema,
 } from './types';
@@ -149,6 +151,48 @@ export const CheckEmailsExistRoute = createRoute({
         },
       },
       description: 'List of emails that already exist as users',
+    },
+  },
+});
+
+export const UploadProfilePictureRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/users/{id}/profile-picture',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': { schema: ProfilePictureUploadResponseSchema },
+      },
+      description: 'Profile picture uploaded successfully',
+    },
+    400: {
+      description: 'Invalid file or file size exceeded',
+    },
+    404: {
+      description: 'User not found',
+    },
+  },
+});
+
+export const UpdateUserProfileRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/users/{id}/profile',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: { 'application/json': { schema: UpdateUserProfileSchema } },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: UserSchema } },
+      description: 'Profile updated successfully',
+    },
+    404: {
+      description: 'User not found',
     },
   },
 });
