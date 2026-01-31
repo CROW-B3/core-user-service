@@ -52,8 +52,9 @@ export const createUserFromBuilder = async (
   builder: UserBuilder,
   email: string,
   name: string,
-  role: 'owner' | 'admin' | 'member',
-  timestamp: Date
+  timestamp: Date,
+  onboardingId?: string,
+  profilePictureUrl?: string
 ): Promise<string> => {
   const userId = crypto.randomUUID();
 
@@ -63,8 +64,9 @@ export const createUserFromBuilder = async (
     organizationId: builder.organizationId,
     email,
     name,
+    profilePictureUrl: profilePictureUrl || null,
+    onboardingId: onboardingId || null,
     permissions: builder.permissions,
-    role,
     createdAt: timestamp,
     updatedAt: timestamp,
   });

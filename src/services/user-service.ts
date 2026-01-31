@@ -42,3 +42,51 @@ export const checkEmailsExist = async (
 
   return existingUsers.map(user => user.email);
 };
+
+export const uploadProfilePictureToR2 = async (
+  bucket: R2Bucket,
+  userId: string,
+  file: File
+): Promise<string> => {
+  const timestamp = Date.now();
+  const key = `profile-pictures/${userId}/${timestamp}-${file.name}`;
+
+  await bucket.put(key, file.stream(), {
+    httpMetadata: {
+      contentType: file.type,
+    },
+  });
+
+  return `https://pub-YOUR_R2_PUBLIC_URL/${key}`;
+};
+
+export const updateUserProfile = async (
+  database: Database,
+  userId: string,
+  updates: { name?: string; profilePictureUrl?: string }
+): Promise<User | null> => {
+  const timestamp = new Date();
+
+  await database
+    .update(schema.user)
+    .set({
+      ...updates,
+      updatedAt: timestamp,
+    })
+    .where(eq(schema.user.id, userId));
+
+  return fetchUserById(database, userId);
+};
+
+export const canManageTeam = (permissions: string): boolean => {
+  try {
+    const parsed = JSON.parse(permissions);
+    return parsed.teamManagement === true;
+  } catch {
+    return false;
+  }
+};
+
+export const isAdmin = (permissions: string): boolean => {
+  return canManageTeam(permissions);
+};
