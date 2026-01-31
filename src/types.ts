@@ -54,8 +54,9 @@ export const UserSchema = z
     organizationId: z.string(),
     email: z.string(),
     name: z.string(),
+    profilePictureUrl: z.string().nullable(),
+    onboardingId: z.string().nullable(),
     permissions: PermissionsSchema,
-    role: z.enum(['owner', 'admin', 'member']),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -65,6 +66,19 @@ export const FinalizeUserBuilderSchema = z
   .object({
     email: z.string(),
     name: z.string(),
-    role: z.enum(['owner', 'admin', 'member']),
+    onboardingId: z.string().optional(),
   })
   .openapi('FinalizeUserBuilder');
+
+export const UpdateUserProfileSchema = z
+  .object({
+    name: z.string().optional(),
+    profilePictureUrl: z.string().optional(),
+  })
+  .openapi('UpdateUserProfile');
+
+export const ProfilePictureUploadResponseSchema = z
+  .object({
+    url: z.string(),
+  })
+  .openapi('ProfilePictureUploadResponse');

@@ -5,6 +5,7 @@ import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
 import * as schema from './db/schema';
 import {
+  CheckEmailsExistRoute,
   CreateUserBuilderRoute,
   FinalizeUserBuilderRoute,
   GetUserBuilderRoute,
@@ -13,6 +14,21 @@ import {
   GetUserRoute,
   HelloWorldRoute,
 } from './routes';
+import {
+  createUserBuilderInDatabase,
+  createUserFromBuilder,
+  fetchUserBuilderById,
+  markUserBuilderAsActive,
+} from './services/user-builder-service';
+import {
+  checkEmailsExist,
+  fetchUserByBetterAuthId,
+  fetchUserById,
+} from './services/user-service';
+import {
+  formatUserBuilderResponse,
+  formatUserResponse,
+} from './utils/formatters';
 
 // In-memory user storage for local development
 // Maps authId -> user object
@@ -64,6 +80,8 @@ app.post('/api/v1/user-builders/:id/finalize', async c => {
     role,
     authId,
   });
+  return builderId;
+};
 
   // Create and store user
   const userId = crypto.randomUUID();
@@ -147,6 +165,15 @@ app.post('/api/v1/users/check-emails', async c => {
     },
     200
   );
+});
+
+app.openapi(CheckEmailsExistRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const { emails } = context.req.valid('json');
+
+  const existingEmails = await checkEmailsExist(database, emails);
+
+  return context.json({ existingEmails });
 });
 
 app.doc('/docs', {
