@@ -15,8 +15,9 @@ export const user = sqliteTable('user', {
   organizationId: text('organizationId').notNull(),
   email: text('email').notNull(),
   name: text('name').notNull(),
+  profilePictureUrl: text('profilePictureUrl'),
+  onboardingId: text('onboardingId'),
   permissions: text('permissions').notNull(),
-  role: text('role').notNull().default('member'),
   createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 });
