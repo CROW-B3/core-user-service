@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
 import * as schema from './db/schema';
+import { jwtAuth, systemJwtAuth } from './middleware/auth';
 import {
   CheckEmailsExistRoute,
   CreateUserBuilderRoute,

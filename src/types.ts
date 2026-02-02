@@ -3,6 +3,7 @@ import { z } from '@hono/zod-openapi';
 export interface Environment {
   DB: D1Database;
   R2_BUCKET: R2Bucket;
+  BETTER_AUTH_SECRET: string;
   ENVIRONMENT: 'local' | 'dev' | 'prod';
 }
 
