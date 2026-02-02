@@ -4,6 +4,10 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
 import * as schema from './db/schema';
+import { validateEnv } from './config/validate-env';
+import { createLogger } from './config/logger';
+import { handleErrorResponse } from './utils/error-handler';
+import { HealthCheckRoute, ReadinessCheckRoute } from './routes/health';
 import { jwtAuth, systemJwtAuth } from './middleware/auth';
 import {
   CheckEmailsExistRoute,
@@ -50,6 +54,7 @@ const userCache = new Map<
 >();
 
 const app = new OpenAPIHono<{ Bindings: Environment }>();
+
 app.use(poweredBy());
 app.use(logger());
 app.use(
@@ -234,12 +239,22 @@ app.openapi(UpdateUserProfileRoute, async context => {
   return context.json(formatUserResponse(updatedUser));
 });
 
-app.doc('/docs', {
+app.doc('/api/docs', {
   openapi: '3.0.0',
   info: {
     version: '1.0.0',
-    title: 'User Service API',
+    title: 'CROW User API',
+    description: 'User management service for CROW platform',
   },
+});
+
+app.notFound(c =>
+  c.json({ error: 'Not Found', message: 'Route not found' }, 404)
+);
+
+app.onError((error, c) => {
+  const logger = createLogger(c.env);
+  return handleErrorResponse(c, error, logger);
 });
 
 export default app;
