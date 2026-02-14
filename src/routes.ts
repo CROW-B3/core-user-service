@@ -196,3 +196,27 @@ export const UpdateUserProfileRoute = createRoute({
     },
   },
 });
+
+export const GetUsersByOrganizationRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/users/by-organization/{organizationId}',
+  request: {
+    params: z.object({ organizationId: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            users: z.array(UserSchema),
+            total: z.number(),
+          }),
+        },
+      },
+      description: 'Users retrieved successfully',
+    },
+    404: {
+      description: 'No users found',
+    },
+  },
+});

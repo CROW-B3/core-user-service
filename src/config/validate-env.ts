@@ -1,69 +1,63 @@
 import type { Environment } from '../types';
 
-/**
- * Required environment variables for user service
- */
-const REQUIRED_ENV_VARS = [
+const REQUIRED_ENVIRONMENT_VARIABLES = [
   'BETTER_AUTH_SECRET',
   'AUTH_SERVICE_URL',
 ] as const;
 
-type RequiredEnvVar = (typeof REQUIRED_ENV_VARS)[number];
-
-/**
- * Validates that all required environment variables are present
- * @throws Error if any required variables are missing
- */
-export function validateEnv(env: Partial<Environment>): void {
-  const missing: string[] = [];
-  const empty: string[] = [];
-
-  for (const key of REQUIRED_ENV_VARS) {
+const findMissingEnvironmentVariables = (env: Partial<Environment>): string[] =>
+  REQUIRED_ENVIRONMENT_VARIABLES.filter(key => {
     const value = env[key as keyof Environment];
+    return value === undefined || value === null;
+  });
 
-    if (value === undefined || value === null) {
-      missing.push(key);
-    } else if (typeof value === 'string' && value.trim() === '') {
-      empty.push(key);
-    }
-  }
+const findEmptyEnvironmentVariables = (env: Partial<Environment>): string[] =>
+  REQUIRED_ENVIRONMENT_VARIABLES.filter(key => {
+    const value = env[key as keyof Environment];
+    return typeof value === 'string' && value.trim() === '';
+  });
 
+const buildValidationErrorMessages = (
+  missing: string[],
+  empty: string[]
+): string[] => {
   const errors: string[] = [];
-
   if (missing.length > 0) {
-    errors.push(`Missing required environment variables: ${missing.join(', ')}`);
+    errors.push(
+      `Missing required environment variables: ${missing.join(', ')}`
+    );
   }
-
   if (empty.length > 0) {
     errors.push(`Empty environment variables: ${empty.join(', ')}`);
   }
+  return errors;
+};
 
-  if (errors.length > 0) {
-    throw new Error(
-      `Environment validation failed:\n${errors.join('\n')}\n\n` +
-        'Please ensure all required environment variables are set in your .env file or deployment configuration.'
-    );
-  }
+export function validateEnvironmentVariables(env: Partial<Environment>): void {
+  const missingVariables = findMissingEnvironmentVariables(env);
+  const emptyVariables = findEmptyEnvironmentVariables(env);
+  const validationErrors = buildValidationErrorMessages(
+    missingVariables,
+    emptyVariables
+  );
+
+  if (validationErrors.length === 0) return;
+
+  throw new Error(
+    `Environment validation failed:\n${validationErrors.join('\n')}\n\n` +
+      'Please ensure all required environment variables are set in your .env file or deployment configuration.'
+  );
 }
 
-/**
- * Get environment-specific configuration
- */
-export function getEnvironment(env: Environment): 'local' | 'dev' | 'prod' {
-  return (env.ENVIRONMENT as 'local' | 'dev' | 'prod') || 'prod';
-}
+export const determineEnvironmentType = (
+  env: Environment
+): 'local' | 'dev' | 'prod' =>
+  (env.ENVIRONMENT as 'local' | 'dev' | 'prod') || 'prod';
 
-/**
- * Check if running in production
- */
-export function isProduction(env: Environment): boolean {
-  return getEnvironment(env) === 'prod';
-}
+export const isProductionEnvironment = (env: Environment): boolean =>
+  determineEnvironmentType(env) === 'prod';
 
-/**
- * Check if running in development
- */
-export function isDevelopment(env: Environment): boolean {
-  const envType = getEnvironment(env);
-  return envType === 'dev' || envType === 'local';
-}
+export const isDevelopmentEnvironment = (env: Environment): boolean => {
+  const environmentType = determineEnvironmentType(env);
+  return environmentType === 'dev' || environmentType === 'local';
+};
