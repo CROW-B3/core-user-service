@@ -1,6 +1,7 @@
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import { eq, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema';
+import { fetchPermissionsForRole, Permission } from '../types/permissions';
 
 export type User = typeof schema.user.$inferSelect;
 export type Database = DrizzleD1Database<typeof schema>;
@@ -31,7 +32,7 @@ export const fetchUserByBetterAuthId = async (
   return results[0] ?? null;
 };
 
-export const checkEmailsExist = async (
+export const findExistingEmailAddresses = async (
   database: Database,
   emails: string[]
 ): Promise<string[]> => {
@@ -49,44 +50,99 @@ export const uploadProfilePictureToR2 = async (
   file: File
 ): Promise<string> => {
   const timestamp = Date.now();
-  const key = `profile-pictures/${userId}/${timestamp}-${file.name}`;
+  const storageKey = `profile-pictures/${userId}/${timestamp}-${file.name}`;
 
-  await bucket.put(key, file.stream(), {
+  await bucket.put(storageKey, file.stream(), {
     httpMetadata: {
       contentType: file.type,
     },
   });
 
-  return `https://pub-YOUR_R2_PUBLIC_URL/${key}`;
+  return `https://pub-YOUR_R2_PUBLIC_URL/${storageKey}`;
 };
 
 export const updateUserProfile = async (
   database: Database,
   userId: string,
-  updates: { name?: string; profilePictureUrl?: string }
+  profileUpdates: { name?: string; profilePictureUrl?: string }
 ): Promise<User | null> => {
-  const timestamp = new Date();
+  const currentTimestamp = Date.now();
 
   await database
     .update(schema.user)
     .set({
-      ...updates,
-      updatedAt: timestamp,
+      ...profileUpdates,
+      updatedAt: currentTimestamp,
     })
     .where(eq(schema.user.id, userId));
 
   return fetchUserById(database, userId);
 };
 
-export const canManageTeam = (permissions: string): boolean => {
+export const createUser = async (
+  database: Database,
+  betterAuthUserId: string,
+  organizationId: string,
+  email: string,
+  name: string,
+  role: 'admin' | 'member',
+  modules: { web: boolean; cctv: boolean; social: boolean },
+  onboardingId?: string
+): Promise<User> => {
+  const userId = crypto.randomUUID();
+  const currentTimestamp = Date.now();
+  const permissions = fetchPermissionsForRole(role, modules);
+
+  await database.insert(schema.user).values({
+    id: userId,
+    betterAuthUserId,
+    organizationId,
+    email,
+    name,
+    permissions: JSON.stringify(permissions),
+    status: 'pending',
+    role,
+    onboardingId,
+    profilePictureUrl: null,
+    createdAt: currentTimestamp,
+    updatedAt: currentTimestamp,
+  });
+
+  return (await fetchUserById(database, userId))!;
+};
+
+export const activateUser = async (
+  database: Database,
+  userId: string
+): Promise<void> => {
+  await database
+    .update(schema.user)
+    .set({ status: 'active', updatedAt: Date.now() })
+    .where(eq(schema.user.id, userId));
+};
+
+export const doesUserHavePermission = (
+  user: User,
+  permission: Permission
+): boolean => {
   try {
-    const parsed = JSON.parse(permissions);
-    return parsed.teamManagement === true;
+    const permissions = JSON.parse(user.permissions) as string[];
+    return permissions.includes(permission);
   } catch {
     return false;
   }
 };
 
-export const isAdmin = (permissions: string): boolean => {
-  return canManageTeam(permissions);
-};
+export const isUserAllowedToManageTeam = (user: User): boolean =>
+  doesUserHavePermission(user, Permission.TEAM_MANAGE);
+
+export const isUserAdmin = (user: User): boolean => user.role === 'admin';
+
+export const fetchUsersByOrganizationId = async (
+  database: Database,
+  organizationId: string
+): Promise<User[]> =>
+  database
+    .select()
+    .from(schema.user)
+    .where(eq(schema.user.organizationId, organizationId));
