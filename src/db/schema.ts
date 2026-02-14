@@ -1,14 +1,5 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-export const userBuilder = sqliteTable('user_builder', {
-  id: text('id').primaryKey(),
-  betterAuthUserId: text('betterAuthUserId').notNull(),
-  organizationId: text('organizationId').notNull(),
-  permissions: text('permissions').notNull(),
-  status: text('status').notNull().default('draft'),
-  createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
-});
-
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
   betterAuthUserId: text('betterAuthUserId').notNull().unique(),
@@ -18,6 +9,8 @@ export const user = sqliteTable('user', {
   profilePictureUrl: text('profilePictureUrl'),
   onboardingId: text('onboardingId'),
   permissions: text('permissions').notNull(),
-  createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+  status: text('status').notNull().default('pending'),
+  role: text('role').notNull().default('member'),
+  createdAt: integer('createdAt').notNull(),
+  updatedAt: integer('updatedAt').notNull(),
 });

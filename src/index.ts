@@ -3,41 +3,33 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
-import * as schema from './db/schema';
-import { validateEnv } from './config/validate-env';
 import { createLogger } from './config/logger';
-import { handleErrorResponse } from './utils/error-handler';
-import { HealthCheckRoute, ReadinessCheckRoute } from './routes/health';
-import { jwtAuth, systemJwtAuth } from './middleware/auth';
+import { validateEnvironmentVariables } from './config/validate-env';
+import * as schema from './db/schema';
+import { requireOwnership } from './middleware/authorization';
+import { createJWTMiddleware } from './middleware/jwt';
 import {
   CheckEmailsExistRoute,
-  CreateUserBuilderRoute,
-  FinalizeUserBuilderRoute,
-  GetUserBuilderRoute,
   GetUserByAuthIdRoute,
   GetUserPermissionsRoute,
   GetUserRoute,
+  GetUsersByOrganizationRoute,
   HelloWorldRoute,
   UpdateUserProfileRoute,
   UploadProfilePictureRoute,
 } from './routes';
+import { HealthCheckRoute, ReadinessCheckRoute } from './routes/health';
 import {
-  createUserBuilderInDatabase,
-  createUserFromBuilder,
-  fetchUserBuilderById,
-  markUserBuilderAsActive,
-} from './services/user-builder-service';
-import {
-  checkEmailsExist,
+  createUser,
   fetchUserByBetterAuthId,
   fetchUserById,
+  fetchUsersByOrganizationId,
+  findExistingEmailAddresses,
   updateUserProfile,
   uploadProfilePictureToR2,
 } from './services/user-service';
-import {
-  formatUserBuilderResponse,
-  formatUserResponse,
-} from './utils/formatters';
+import { handleErrorResponse } from './utils/error-handler';
+import { formatUserResponse } from './utils/formatters';
 
 // In-memory user storage for local development
 // Maps authId -> user object
@@ -181,62 +173,142 @@ app.openapi(CheckEmailsExistRoute, async context => {
   const database = drizzle(context.env.DB, { schema });
   const { emails } = context.req.valid('json');
 
-  const existingEmails = await checkEmailsExist(database, emails);
+  const existingEmails = await findExistingEmailAddresses(database, emails);
 
   return context.json({ existingEmails });
 });
 
-app.openapi(UploadProfilePictureRoute, async context => {
-  const database = drizzle(context.env.DB, { schema });
-  const { id } = context.req.valid('param');
+app.openapi(
+  UploadProfilePictureRoute,
+  requireOwnership('id'),
+  async context => {
+    const database = drizzle(context.env.DB, { schema });
+    const { id } = context.req.valid('param');
 
-  const user = await fetchUserById(database, id);
-  if (!user) {
-    return context.json({ error: 'User not found' }, 404);
+    const user = await fetchUserById(database, id);
+    if (!user) {
+      return context.json(
+        {
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'User not found',
+            timestamp: new Date().toISOString(),
+          },
+        },
+        404
+      );
+    }
+
+    const formData = await context.req.formData();
+    const file = formData.get('file') as File;
+
+    if (!file) {
+      return context.json(
+        {
+          error: {
+            code: 'NO_FILE_PROVIDED',
+            message: 'No file provided',
+            timestamp: new Date().toISOString(),
+          },
+        },
+        400
+      );
+    }
+
+    const maximumFileSizeInBytes = 5 * 1024 * 1024;
+    if (file.size > maximumFileSizeInBytes) {
+      return context.json(
+        {
+          error: {
+            code: 'FILE_SIZE_EXCEEDED',
+            message: 'File size exceeds 5MB limit',
+            timestamp: new Date().toISOString(),
+          },
+        },
+        400
+      );
+    }
+
+    const allowedImageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedImageMimeTypes.includes(file.type)) {
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_FILE_TYPE',
+            message: 'Invalid file type. Only JPG, PNG, and WebP are allowed',
+            timestamp: new Date().toISOString(),
+          },
+        },
+        400
+      );
+    }
+
+    const url = await uploadProfilePictureToR2(context.env.R2_BUCKET, id, file);
+
+    return context.json({ url });
   }
+);
 
-  const formData = await context.req.formData();
-  const file = formData.get('file') as File;
-
-  if (!file) {
-    return context.json({ error: 'No file provided' }, 400);
-  }
-
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
-    return context.json({ error: 'File size exceeds 5MB limit' }, 400);
-  }
-
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-  if (!allowedTypes.includes(file.type)) {
-    return context.json(
-      { error: 'Invalid file type. Only JPG, PNG, and WebP are allowed' },
-      400
-    );
-  }
-
-  const url = await uploadProfilePictureToR2(context.env.R2_BUCKET, id, file);
-
-  return context.json({ url });
-});
-
-app.openapi(UpdateUserProfileRoute, async context => {
+app.openapi(UpdateUserProfileRoute, requireOwnership('id'), async context => {
   const database = drizzle(context.env.DB, { schema });
   const { id } = context.req.valid('param');
   const body = context.req.valid('json');
 
   const user = await fetchUserById(database, id);
   if (!user) {
-    return context.json({ error: 'User not found' }, 404);
+    return context.json(
+      {
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
   }
 
   const updatedUser = await updateUserProfile(database, id, body);
 
   if (!updatedUser) {
-    return context.json({ error: 'Failed to update profile' }, 500);
+    return context.json(
+      {
+        error: {
+          code: 'UPDATE_FAILED',
+          message: 'Failed to update user profile',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      500
+    );
   }
 
   return context.json(formatUserResponse(updatedUser));
+});
+
+app.openapi(GetUsersByOrganizationRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const { organizationId } = context.req.valid('param');
+
+  const users = await fetchUsersByOrganizationId(database, organizationId);
+
+  if (!users || users.length === 0) {
+    return context.json(
+      {
+        error: {
+          code: 'NO_USERS_FOUND',
+          message: 'No users found for this organization',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
+  }
+
+  return context.json({
+    users: users.map(formatUserResponse),
+    total: users.length,
+  });
 });
 
 app.doc('/api/docs', {
