@@ -1,7 +1,8 @@
 import type { Context, Next } from 'hono';
+import type { Permission } from '../types/permissions';
 import { verify } from 'hono/jwt';
 
-export const jwtAuth = (secret: string) => {
+export const createUserJwtAuthMiddleware = (secret: string) => {
   return async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -11,7 +12,7 @@ export const jwtAuth = (secret: string) => {
     const token = authHeader.substring(7);
 
     try {
-      const payload = await verify(token, secret);
+      const payload = await verify(token, secret, 'HS256');
       c.set('jwtPayload', payload);
       c.set('isSystem', false);
       return next();
@@ -21,7 +22,7 @@ export const jwtAuth = (secret: string) => {
   };
 };
 
-export const systemJwtAuth = (secret: string) => {
+export const createSystemJwtAuthMiddleware = (secret: string) => {
   return async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -31,7 +32,7 @@ export const systemJwtAuth = (secret: string) => {
     const token = authHeader.substring(7);
 
     try {
-      const payload = await verify(token, secret);
+      const payload = await verify(token, secret, 'HS256');
 
       if (payload.type !== 'system') {
         return c.json({ error: 'System token required' }, 401);
@@ -46,17 +47,17 @@ export const systemJwtAuth = (secret: string) => {
   };
 };
 
-export const requirePermission = (permission: string) => {
+export const requirePermission = (permission: Permission) => {
   return async (c: Context, next: Next) => {
-    const isSystem = c.get('isSystem');
-    if (isSystem) {
+    const isSystemToken = c.get('isSystem');
+    if (isSystemToken) {
       return next();
     }
 
     const payload = c.get('jwtPayload');
-    const permissions = payload?.permissions || {};
+    const permissions = payload?.permissions || [];
 
-    if (!permissions[permission]) {
+    if (!permissions.includes(permission)) {
       return c.json(
         { error: 'Forbidden', message: `Missing permission: ${permission}` },
         403
@@ -69,8 +70,8 @@ export const requirePermission = (permission: string) => {
 
 export const requireRole = (role: 'admin' | 'member') => {
   return async (c: Context, next: Next) => {
-    const isSystem = c.get('isSystem');
-    if (isSystem) {
+    const isSystemToken = c.get('isSystem');
+    if (isSystemToken) {
       return next();
     }
 
@@ -86,10 +87,10 @@ export const requireRole = (role: 'admin' | 'member') => {
   };
 };
 
-export const systemOnly = () => {
+export const requireSystemAccess = () => {
   return async (c: Context, next: Next) => {
-    const isSystem = c.get('isSystem');
-    if (!isSystem) {
+    const isSystemToken = c.get('isSystem');
+    if (!isSystemToken) {
       return c.json({ error: 'Forbidden', message: 'System access only' }, 403);
     }
     return next();

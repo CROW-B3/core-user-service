@@ -1,22 +1,25 @@
-import { tryCatch } from '@d3avarja/try-catch';
 import type { Context } from 'hono';
 import type pino from 'pino';
+import { tryCatch } from '@d3avarja/try-catch';
 
-export type ServiceError = {
+export interface ServiceError {
   statusCode: number;
   code: string;
   message: string;
-};
+}
 
-export type ErrorResponse = {
+export interface ErrorResponse {
   error: {
     code: string;
     message: string;
     timestamp: string;
   };
-};
+}
 
-const createErrorResponse = (code: string, message: string): ErrorResponse => ({
+const isServiceError = (error: unknown): error is ServiceError =>
+  typeof error === 'object' && error !== null;
+
+const buildErrorResponse = (code: string, message: string): ErrorResponse => ({
   error: {
     code,
     message,
@@ -24,59 +27,63 @@ const createErrorResponse = (code: string, message: string): ErrorResponse => ({
   },
 });
 
-const getStatusCodeFromError = (error: unknown): number => {
-  if (typeof error === 'object' && error !== null && 'statusCode' in error) {
-    const statusCode = (error as ServiceError).statusCode;
-    return typeof statusCode === 'number' ? statusCode : 500;
-  }
+const extractStatusCodeFromError = (error: unknown): number => {
+  if (!isServiceError(error) || !('statusCode' in error)) return 500;
 
-  return 500;
+  const statusCode = (error as ServiceError).statusCode;
+  return typeof statusCode === 'number' ? statusCode : 500;
 };
 
-const getErrorCodeFromError = (error: unknown): string => {
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    const code = (error as ServiceError).code;
-    return typeof code === 'string' ? code : 'INTERNAL_ERROR';
-  }
+const extractErrorCodeFromError = (error: unknown): string => {
+  if (!isServiceError(error) || !('code' in error)) return 'INTERNAL_ERROR';
 
-  return 'INTERNAL_ERROR';
+  const code = (error as ServiceError).code;
+  return typeof code === 'string' ? code : 'INTERNAL_ERROR';
 };
 
-const getErrorMessageFromError = (error: unknown): string => {
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as ServiceError).message;
-    return typeof message === 'string' ? message : 'An unexpected error occurred';
-  }
-
+const extractMessageFromError = (error: unknown): string => {
   if (typeof error === 'string') return error;
 
-  return 'An unexpected error occurred';
-}
+  if (!isServiceError(error) || !('message' in error))
+    return 'An unexpected error occurred';
 
-;
-
-const logErrorToConsole = (logger: pino.Logger, error: unknown, context?: string): void => {
-  const errorMessage = getErrorMessageFromError(error);
-  const errorCode = getErrorCodeFromError(error);
-
-  if (context) {
-    logger.error({ error, code: errorCode, context }, errorMessage);
-  } else {
-    logger.error({ error, code: errorCode }, errorMessage);
-  }
+  const message = (error as ServiceError).message;
+  return typeof message === 'string' ? message : 'An unexpected error occurred';
 };
 
-export const handleErrorResponse = (c: Context, error: unknown, logger: pino.Logger) => {
-  const statusCode = getStatusCodeFromError(error);
-  const code = getErrorCodeFromError(error);
-  const message = getErrorMessageFromError(error);
+const logErrorWithContext = (
+  logger: pino.Logger,
+  error: unknown,
+  context?: string
+): void => {
+  const errorMessage = extractMessageFromError(error);
+  const errorCode = extractErrorCodeFromError(error);
+  const logPayload = context
+    ? { error, code: errorCode, context }
+    : { error, code: errorCode };
 
-  logErrorToConsole(logger, error);
-
-  return c.json(createErrorResponse(code, message), statusCode);
+  logger.error(logPayload, errorMessage);
 };
 
-export const createServiceError = (statusCode: number, code: string, message: string): ServiceError => ({
+export const handleErrorResponse = (
+  c: Context,
+  error: unknown,
+  logger: pino.Logger
+) => {
+  const statusCode = extractStatusCodeFromError(error);
+  const code = extractErrorCodeFromError(error);
+  const message = extractMessageFromError(error);
+
+  logErrorWithContext(logger, error);
+
+  return c.json(buildErrorResponse(code, message), statusCode);
+};
+
+export const createServiceError = (
+  statusCode: number,
+  code: string,
+  message: string
+): ServiceError => ({
   statusCode,
   code,
   message,
