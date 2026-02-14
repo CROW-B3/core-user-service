@@ -17,27 +17,27 @@ declare module 'hono' {
 const SERVICE_REGISTRY: Record<string, ServiceCredentials> = {
   'service:auth': {
     serviceId: 'service:auth',
-    apiKey: '', // Set via env
+    apiKey: '',
     allowedScopes: ['users:*'],
   },
   'service:organization': {
     serviceId: 'service:organization',
-    apiKey: '', // Set via env
+    apiKey: '',
     allowedScopes: ['users:read', 'users:write'],
   },
   'service:billing': {
     serviceId: 'service:billing',
-    apiKey: '', // Set via env
+    apiKey: '',
     allowedScopes: ['users:read'],
   },
   'service:notification': {
     serviceId: 'service:notification',
-    apiKey: '', // Set via env
+    apiKey: '',
     allowedScopes: ['users:read'],
   },
 };
 
-const loadServiceRegistry = (
+const populateServiceRegistryFromEnvironment = (
   env: Environment
 ): Record<string, ServiceCredentials> => {
   const registry = { ...SERVICE_REGISTRY };
@@ -52,19 +52,17 @@ const loadServiceRegistry = (
   return registry;
 };
 
-const verifyServiceApiKey = (
+const findServiceByApiKey = (
   registry: Record<string, ServiceCredentials>,
   apiKey: string
 ): ServiceCredentials | null => {
-  for (const serviceId in registry) {
-    if (registry[serviceId].apiKey === apiKey && apiKey !== '') {
-      return registry[serviceId];
-    }
-  }
-  return null;
+  const matchingService = Object.values(registry).find(
+    service => service.apiKey === apiKey && apiKey !== ''
+  );
+  return matchingService ?? null;
 };
 
-export const serviceAuthMiddleware = () => {
+export const createServiceAuthMiddleware = () => {
   return async (c: Context<{ Bindings: Environment }>, next: Next) => {
     const apiKeyHeader = c.req.header('X-Service-API-Key');
 
@@ -72,8 +70,8 @@ export const serviceAuthMiddleware = () => {
       return next();
     }
 
-    const registry = loadServiceRegistry(c.env);
-    const service = verifyServiceApiKey(registry, apiKeyHeader);
+    const registry = populateServiceRegistryFromEnvironment(c.env);
+    const service = findServiceByApiKey(registry, apiKeyHeader);
 
     if (!service) {
       return c.json(
@@ -89,6 +87,17 @@ export const serviceAuthMiddleware = () => {
   };
 };
 
+const doesScopeMatchAllowedScope = (
+  scope: string,
+  allowedScope: string
+): boolean => {
+  if (allowedScope.endsWith(':*')) {
+    const prefix = allowedScope.slice(0, -2);
+    return scope.startsWith(prefix);
+  }
+  return allowedScope === scope;
+};
+
 export const requireServiceScope = (scope: string) => {
   return async (c: Context, next: Next) => {
     const serviceScopes = c.get('serviceScopes');
@@ -100,15 +109,11 @@ export const requireServiceScope = (scope: string) => {
       );
     }
 
-    const hasScope = serviceScopes.some(allowedScope => {
-      if (allowedScope.endsWith(':*')) {
-        const prefix = allowedScope.slice(0, -2);
-        return scope.startsWith(prefix);
-      }
-      return allowedScope === scope;
-    });
+    const hasSufficientScope = serviceScopes.some(allowedScope =>
+      doesScopeMatchAllowedScope(scope, allowedScope)
+    );
 
-    if (!hasScope) {
+    if (!hasSufficientScope) {
       return c.json(
         { error: 'Forbidden', message: `Missing required scope: ${scope}` },
         403

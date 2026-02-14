@@ -4,6 +4,7 @@ export interface Environment {
   DB: D1Database;
   R2_BUCKET: R2Bucket;
   BETTER_AUTH_SECRET: string;
+  AUTH_SERVICE_URL: string;
   ENVIRONMENT: 'local' | 'dev' | 'prod';
 }
 
