@@ -1,8 +1,10 @@
 import type { Environment } from './types';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { instrument } from '@microlabs/otel-cf-workers';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
+import { createOtelConfig } from './lib/otel';
 import { HelloWorldRoute } from './routes';
 
 // In-memory user storage for local development
@@ -147,4 +149,4 @@ app.doc('/docs', {
     title: 'User Service API',
   },
 });
-export default app;
+export default instrument(app, createOtelConfig('crow-core-user-service'));
