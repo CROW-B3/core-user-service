@@ -1,5 +1,6 @@
 import type { Environment } from './types';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { drizzle } from 'drizzle-orm/d1';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
@@ -72,14 +73,9 @@ app.post('/api/v1/user-builders/:id/finalize', async c => {
     role,
     authId,
   });
-  return c.json(builderId, 200);
-});
 
-app.openapi(CreateUserRoute, async c => {
   const userId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
-  const body = c.req.valid('json');
-  const { authId, email, name, role } = body;
 
   const user = {
     id: userId,
@@ -93,17 +89,7 @@ app.openapi(CreateUserRoute, async c => {
   localDevelopmentUserCache.set(user.authId, user);
   console.warn(`[User Service] Cached user with authId: ${user.authId}`);
 
-  return c.json(
-    {
-      id: userId,
-      builderId,
-      email,
-      name,
-      role,
-      createdAt,
-    },
-    200
-  );
+  return c.json(user, 200);
 });
 
 app.post('/api/v1/billing-builders', async c => {
