@@ -9,12 +9,14 @@ import * as schema from './db/schema';
 import { requireOwnership } from './middleware/authorization';
 import {
   CheckEmailsExistRoute,
+  CreateUserRoute,
   GetUsersByOrganizationRoute,
   HelloWorldRoute,
   UpdateUserProfileRoute,
   UploadProfilePictureRoute,
 } from './routes';
 import {
+  createUser,
   fetchUserById,
   fetchUsersByOrganizationId,
   findExistingEmailAddresses,
@@ -152,6 +154,24 @@ app.openapi(CheckEmailsExistRoute, async context => {
   const existingEmails = await findExistingEmailAddresses(database, emails);
 
   return context.json({ existingEmails });
+});
+
+app.openapi(CreateUserRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const body = context.req.valid('json');
+
+  const user = await createUser(
+    database,
+    body.betterAuthUserId,
+    body.organizationId,
+    body.email,
+    body.name,
+    (body.role || 'member') as 'admin' | 'member',
+    body.modules || { web: true, cctv: true, social: true },
+    body.onboardingId
+  );
+
+  return context.json(formatUserResponse(user), 201);
 });
 
 app.openapi(
