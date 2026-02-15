@@ -4,24 +4,16 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
 import { createLogger } from './config/logger';
-import { validateEnvironmentVariables } from './config/validate-env';
 import * as schema from './db/schema';
 import { requireOwnership } from './middleware/authorization';
-import { createJWTMiddleware } from './middleware/jwt';
 import {
   CheckEmailsExistRoute,
-  GetUserByAuthIdRoute,
-  GetUserPermissionsRoute,
-  GetUserRoute,
   GetUsersByOrganizationRoute,
   HelloWorldRoute,
   UpdateUserProfileRoute,
   UploadProfilePictureRoute,
 } from './routes';
-import { HealthCheckRoute, ReadinessCheckRoute } from './routes/health';
 import {
-  createUser,
-  fetchUserByBetterAuthId,
   fetchUserById,
   fetchUsersByOrganizationId,
   findExistingEmailAddresses,
@@ -31,9 +23,7 @@ import {
 import { handleErrorResponse } from './utils/error-handler';
 import { formatUserResponse } from './utils/formatters';
 
-// In-memory user storage for local development
-// Maps authId -> user object
-const userCache = new Map<
+const localDevelopmentUserCache = new Map<
   string,
   {
     id: string;
@@ -82,24 +72,25 @@ app.post('/api/v1/user-builders/:id/finalize', async c => {
     role,
     authId,
   });
-  return builderId;
-};
+  return c.json(builderId, 200);
+});
 
-  // Create and store user
+app.openapi(CreateUserRoute, async c => {
   const userId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
+  const body = c.req.valid('json');
+  const { authId, email, name, role } = body;
 
   const user = {
     id: userId,
-    authId: authId || builderId, // Use authId from request, fallback to builderId
+    authId,
     email,
     name,
     role,
     createdAt,
   };
 
-  // Store in cache for lookup
-  userCache.set(user.authId, user);
+  localDevelopmentUserCache.set(user.authId, user);
   console.warn(`[User Service] Cached user with authId: ${user.authId}`);
 
   return c.json(
@@ -141,8 +132,7 @@ app.post('/api/v1/billing-builders/:id/finalize', async c => {
 app.get('/api/v1/users/by-auth-id/:authId', async c => {
   const authId = c.req.param('authId');
 
-  // Look up user in cache
-  const user = userCache.get(authId);
+  const user = localDevelopmentUserCache.get(authId);
 
   if (!user) {
     console.warn(`[User Service] User not found for authId: ${authId}`);
