@@ -1,6 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   CreateUserBuilderSchema,
+  CreateUserSchema,
   FinalizeUserBuilderSchema,
   HelloWorldSchema,
   PermissionsSchema,
@@ -217,6 +218,25 @@ export const GetUsersByOrganizationRoute = createRoute({
     },
     404: {
       description: 'No users found',
+    },
+  },
+});
+
+export const CreateUserRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/users',
+  request: {
+    body: {
+      content: { 'application/json': { schema: CreateUserSchema } },
+    },
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: UserSchema } },
+      description: 'User created successfully',
+    },
+    400: {
+      description: 'Invalid request',
     },
   },
 });
