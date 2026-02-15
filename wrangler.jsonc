@@ -34,6 +34,7 @@
       "vars": {
         "ENVIRONMENT": "dev",
         "AUTH_SERVICE_URL": "https://dev.internal.auth-api.crowai.dev",
+        "BETTER_AUTH_SECRET": "DF1IKzRMqusC5A/56EjCFuCAKVgPNoW6pibNi5IEsFw=",
       },
       "routes": [
         { "pattern": "dev.internal.users.crowai.dev", "custom_domain": true }
@@ -42,7 +43,7 @@
         {
           "binding": "DB",
           "database_name": "crow-core-user-service-db-dev",
-          "database_id": "7cdd3d3a-0632-48c0-8cdd-e5fe5099d7e2",
+          "database_id": "d3621f06-ad76-4be6-8189-0a92bf999b01",
           "migrations_dir": "drizzle/migrations"
         }
       ],
@@ -57,6 +58,7 @@
       "vars": {
         "ENVIRONMENT": "local",
         "AUTH_SERVICE_URL": "http://localhost:8001",
+        "BETTER_AUTH_SECRET": "DF1IKzRMqusC5A/56EjCFuCAKVgPNoW6pibNi5IEsFw="
       },
       "d1_databases": [
         {
