@@ -6,7 +6,6 @@ import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
 import { createLogger } from './config/logger';
 import * as schema from './db/schema';
-import { requireOwnership } from './middleware/authorization';
 import {
   CheckEmailsExistRoute,
   CreateDirectUserRoute,
@@ -230,84 +229,21 @@ app.openapi(CreateDirectUserRoute, async context => {
   return context.json(formatUserResponse(user), 201);
 });
 
-app.openapi(
-  UploadProfilePictureRoute,
-  requireOwnership('id'),
-  async context => {
-    const database = drizzle(context.env.DB, { schema });
-    const { id } = context.req.valid('param');
-
-    const user = await fetchUserById(database, id);
-    if (!user) {
-      return context.json(
-        {
-          error: {
-            code: 'USER_NOT_FOUND',
-            message: 'User not found',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        404
-      );
-    }
-
-    const formData = await context.req.formData();
-    const file = formData.get('file') as File;
-
-    if (!file) {
-      return context.json(
-        {
-          error: {
-            code: 'NO_FILE_PROVIDED',
-            message: 'No file provided',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        400
-      );
-    }
-
-    const maximumFileSizeInBytes = 5 * 1024 * 1024;
-    if (file.size > maximumFileSizeInBytes) {
-      return context.json(
-        {
-          error: {
-            code: 'FILE_SIZE_EXCEEDED',
-            message: 'File size exceeds 5MB limit',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        400
-      );
-    }
-
-    const allowedImageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedImageMimeTypes.includes(file.type)) {
-      return context.json(
-        {
-          error: {
-            code: 'INVALID_FILE_TYPE',
-            message: 'Invalid file type. Only JPG, PNG, and WebP are allowed',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        400
-      );
-    }
-
-    const url = await uploadProfilePictureToR2(context.env.R2_BUCKET, id, file);
-
-    return context.json({ url });
-  }
-);
-
-app.openapi(UpdateUserProfileRoute, requireOwnership('id'), async context => {
-  const database = drizzle(context.env.DB, { schema });
+app.openapi(UploadProfilePictureRoute, async context => {
+  const jwtPayload = context.get('jwtPayload');
   const { id } = context.req.valid('param');
-  const body = context.req.valid('json');
+
+  if (
+    !context.get('isSystem') &&
+    jwtPayload?.sub !== id &&
+    !jwtPayload?.organizationId
+  )
+    return context.json({ error: 'Forbidden', message: 'Access denied' }, 403);
+
+  const database = drizzle(context.env.DB, { schema });
 
   const user = await fetchUserById(database, id);
-  if (!user) {
+  if (!user)
     return context.json(
       {
         error: {
@@ -318,11 +254,83 @@ app.openapi(UpdateUserProfileRoute, requireOwnership('id'), async context => {
       },
       404
     );
-  }
+
+  const formData = await context.req.formData();
+  const file = formData.get('file') as File;
+
+  if (!file)
+    return context.json(
+      {
+        error: {
+          code: 'NO_FILE_PROVIDED',
+          message: 'No file provided',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      400
+    );
+
+  const maximumFileSizeInBytes = 5 * 1024 * 1024;
+  if (file.size > maximumFileSizeInBytes)
+    return context.json(
+      {
+        error: {
+          code: 'FILE_SIZE_EXCEEDED',
+          message: 'File size exceeds 5MB limit',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      400
+    );
+
+  const allowedImageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedImageMimeTypes.includes(file.type))
+    return context.json(
+      {
+        error: {
+          code: 'INVALID_FILE_TYPE',
+          message: 'Invalid file type. Only JPG, PNG, and WebP are allowed',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      400
+    );
+
+  const url = await uploadProfilePictureToR2(context.env.R2_BUCKET, id, file);
+
+  return context.json({ url });
+});
+
+app.openapi(UpdateUserProfileRoute, async context => {
+  const jwtPayload = context.get('jwtPayload');
+  const { id } = context.req.valid('param');
+
+  if (
+    !context.get('isSystem') &&
+    jwtPayload?.sub !== id &&
+    !jwtPayload?.organizationId
+  )
+    return context.json({ error: 'Forbidden', message: 'Access denied' }, 403);
+
+  const database = drizzle(context.env.DB, { schema });
+  const body = context.req.valid('json');
+
+  const user = await fetchUserById(database, id);
+  if (!user)
+    return context.json(
+      {
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
 
   const updatedUser = await updateUserProfile(database, id, body);
 
-  if (!updatedUser) {
+  if (!updatedUser)
     return context.json(
       {
         error: {
@@ -333,7 +341,6 @@ app.openapi(UpdateUserProfileRoute, requireOwnership('id'), async context => {
       },
       500
     );
-  }
 
   return context.json(formatUserResponse(updatedUser));
 });
