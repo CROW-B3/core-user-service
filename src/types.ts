@@ -102,3 +102,13 @@ export const ProfilePictureUploadResponseSchema = z
     url: z.string(),
   })
   .openapi('ProfilePictureUploadResponse');
+
+export const CreateDirectUserSchema = z
+  .object({
+    email: z.string().email(),
+    name: z.string(),
+    organizationId: z.string(),
+    role: z.enum(['owner', 'admin', 'member']).optional(),
+    sendWelcomeEmail: z.boolean().optional(),
+  })
+  .openapi('CreateDirectUser');
