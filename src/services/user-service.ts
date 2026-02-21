@@ -146,3 +146,83 @@ export const fetchUsersByOrganizationId = async (
     .select()
     .from(schema.user)
     .where(eq(schema.user.organizationId, organizationId));
+
+export const fetchUserByEmail = async (
+  database: Database,
+  email: string
+): Promise<User | null> => {
+  const results = await database
+    .select()
+    .from(schema.user)
+    .where(eq(schema.user.email, email))
+    .limit(1);
+
+  return results[0] ?? null;
+};
+
+export const validateUserCreationPayload = (body: {
+  email: string;
+  name: string;
+  organizationId: string;
+  role?: string;
+}): string | null => {
+  if (!body.email) return 'email is required';
+  if (!body.name) return 'name is required';
+  if (!body.organizationId) return 'organizationId is required';
+  return null;
+};
+
+export const checkUserExists = async (
+  database: Database,
+  email: string
+): Promise<boolean> => {
+  const existingUser = await fetchUserByEmail(database, email);
+  return existingUser !== null;
+};
+
+export const createUserRecord = async (
+  database: Database,
+  email: string,
+  name: string,
+  organizationId: string,
+  role: 'owner' | 'admin' | 'member'
+): Promise<User> => {
+  const userId = crypto.randomUUID();
+  const currentTimestamp = Date.now();
+  const resolvedRole = role === 'owner' ? 'admin' : role;
+  const permissions = fetchPermissionsForRole(resolvedRole, {
+    web: true,
+    cctv: true,
+    social: true,
+  });
+
+  await database.insert(schema.user).values({
+    id: userId,
+    betterAuthUserId: userId,
+    organizationId,
+    email,
+    name,
+    permissions: JSON.stringify(permissions),
+    status: 'active',
+    role: resolvedRole,
+    onboardingId: null,
+    profilePictureUrl: null,
+    createdAt: currentTimestamp,
+    updatedAt: currentTimestamp,
+  });
+
+  return (await fetchUserById(database, userId))!;
+};
+
+export const associateUserWithOrganization = async (
+  database: Database,
+  userId: string,
+  organizationId: string,
+  role: 'owner' | 'admin' | 'member'
+): Promise<void> => {
+  const resolvedRole = role === 'owner' ? 'admin' : role;
+  await database
+    .update(schema.user)
+    .set({ organizationId, role: resolvedRole, updatedAt: Date.now() })
+    .where(eq(schema.user.id, userId));
+};

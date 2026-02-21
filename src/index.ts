@@ -9,6 +9,7 @@ import * as schema from './db/schema';
 import { requireOwnership } from './middleware/authorization';
 import {
   CheckEmailsExistRoute,
+  CreateDirectUserRoute,
   CreateUserRoute,
   GetUsersByOrganizationRoute,
   HelloWorldRoute,
@@ -16,12 +17,16 @@ import {
   UploadProfilePictureRoute,
 } from './routes';
 import {
+  associateUserWithOrganization,
+  checkUserExists,
   createUser,
+  createUserRecord,
   fetchUserById,
   fetchUsersByOrganizationId,
   findExistingEmailAddresses,
   updateUserProfile,
   uploadProfilePictureToR2,
+  validateUserCreationPayload,
 } from './services/user-service';
 import { handleErrorResponse } from './utils/error-handler';
 import { formatUserResponse } from './utils/formatters';
@@ -169,6 +174,57 @@ app.openapi(CreateUserRoute, async context => {
     (body.role || 'member') as 'admin' | 'member',
     body.modules || { web: true, cctv: true, social: true },
     body.onboardingId
+  );
+
+  return context.json(formatUserResponse(user), 201);
+});
+
+app.openapi(CreateDirectUserRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const body = context.req.valid('json');
+
+  const validationError = validateUserCreationPayload(body);
+  if (validationError) {
+    return context.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: validationError,
+          timestamp: new Date().toISOString(),
+        },
+      },
+      400
+    );
+  }
+
+  const userAlreadyExists = await checkUserExists(database, body.email);
+  if (userAlreadyExists) {
+    return context.json(
+      {
+        error: {
+          code: 'USER_ALREADY_EXISTS',
+          message: 'A user with this email already exists',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      409
+    );
+  }
+
+  const role = body.role ?? 'member';
+  const user = await createUserRecord(
+    database,
+    body.email,
+    body.name,
+    body.organizationId,
+    role
+  );
+
+  await associateUserWithOrganization(
+    database,
+    user.id,
+    body.organizationId,
+    role
   );
 
   return context.json(formatUserResponse(user), 201);
