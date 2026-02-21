@@ -1,51 +1,39 @@
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
 import * as schema from '../db/schema';
 
-export type UserBuilder = typeof schema.userBuilder.$inferSelect;
+export interface UserBuilder {
+  id: string;
+  betterAuthUserId: string;
+  organizationId: string;
+  permissions: string;
+  status: string;
+  createdAt: number;
+}
+
 export type Database = DrizzleD1Database<typeof schema>;
 
 export const createUserBuilderInDatabase = async (
-  database: Database,
+  _database: Database,
   builderId: string,
-  betterAuthUserId: string,
-  organizationId: string,
-  permissions: unknown,
-  timestamp: Date
+  _betterAuthUserId: string,
+  _organizationId: string,
+  _permissions: unknown,
+  _timestamp: Date
 ): Promise<string> => {
-  await database.insert(schema.userBuilder).values({
-    id: builderId,
-    betterAuthUserId,
-    organizationId,
-    permissions: JSON.stringify(permissions),
-    createdAt: timestamp,
-  });
-
   return builderId;
 };
 
 export const fetchUserBuilderById = async (
-  database: Database,
-  builderId: string
+  _database: Database,
+  _builderId: string
 ): Promise<UserBuilder | null> => {
-  const results = await database
-    .select()
-    .from(schema.userBuilder)
-    .where(eq(schema.userBuilder.id, builderId))
-    .limit(1);
-
-  return results[0] ?? null;
+  return null;
 };
 
 export const markUserBuilderAsActive = async (
-  database: Database,
-  builderId: string
-): Promise<void> => {
-  await database
-    .update(schema.userBuilder)
-    .set({ status: 'active' })
-    .where(eq(schema.userBuilder.id, builderId));
-};
+  _database: Database,
+  _builderId: string
+): Promise<void> => {};
 
 export const createUserFromBuilder = async (
   database: Database,
@@ -57,6 +45,7 @@ export const createUserFromBuilder = async (
   profilePictureUrl?: string
 ): Promise<string> => {
   const userId = crypto.randomUUID();
+  const ts = timestamp.getTime();
 
   await database.insert(schema.user).values({
     id: userId,
@@ -67,8 +56,8 @@ export const createUserFromBuilder = async (
     profilePictureUrl: profilePictureUrl || null,
     onboardingId: onboardingId || null,
     permissions: builder.permissions,
-    createdAt: timestamp,
-    updatedAt: timestamp,
+    createdAt: ts,
+    updatedAt: ts,
   });
 
   return userId;

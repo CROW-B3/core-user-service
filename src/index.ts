@@ -6,20 +6,25 @@ import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
 import { createLogger } from './config/logger';
 import * as schema from './db/schema';
+import { createJWTMiddleware } from './middleware/jwt';
 import {
   CheckEmailsExistRoute,
   CreateDirectUserRoute,
   CreateUserRoute,
+  GetCurrentUserRoute,
   GetUsersByOrganizationRoute,
   HelloWorldRoute,
+  OnboardUserRoute,
   UpdateUserProfileRoute,
   UploadProfilePictureRoute,
 } from './routes';
+import { HealthCheckRoute, ReadinessCheckRoute } from './routes/health';
 import {
   associateUserWithOrganization,
   checkUserExists,
   createUser,
   createUserRecord,
+  fetchUserByBetterAuthId,
   fetchUserById,
   fetchUsersByOrganizationId,
   findExistingEmailAddresses,
@@ -368,6 +373,107 @@ app.openapi(GetUsersByOrganizationRoute, async context => {
     users: users.map(formatUserResponse),
     total: users.length,
   });
+});
+
+app.openapi(HealthCheckRoute, c => {
+  return c.json(
+    {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      service: 'core-user-service',
+      version: '1.0.0',
+      environment: c.env.ENVIRONMENT || 'prod',
+    },
+    200
+  );
+});
+
+app.openapi(ReadinessCheckRoute, async c => {
+  let isDatabaseHealthy = false;
+  try {
+    const database = drizzle(c.env.DB, { schema });
+    await database.run('SELECT 1');
+    isDatabaseHealthy = true;
+  } catch {}
+
+  const isReady = isDatabaseHealthy;
+  return c.json(
+    { ready: isReady, checks: { database: isDatabaseHealthy } },
+    isReady ? 200 : 503
+  );
+});
+
+app.use('/api/v1/users/me', async (c, next) =>
+  createJWTMiddleware(c.env)(c, next)
+);
+app.use('/api/v1/users/onboard', async (c, next) =>
+  createJWTMiddleware(c.env)(c, next)
+);
+
+app.openapi(GetCurrentUserRoute, async context => {
+  const jwtPayload = context.get('jwtPayload');
+  const betterAuthUserId = jwtPayload?.sub as string | undefined;
+  if (!betterAuthUserId) {
+    return context.json(
+      { error: 'Unauthorized', message: 'Missing subject in token' },
+      401
+    );
+  }
+  const database = drizzle(context.env.DB, { schema });
+  const user = await fetchUserByBetterAuthId(database, betterAuthUserId);
+  if (!user) {
+    return context.json(
+      {
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
+  }
+  return context.json(formatUserResponse(user), 200);
+});
+
+app.openapi(OnboardUserRoute, async context => {
+  const jwtPayload = context.get('jwtPayload');
+  const betterAuthUserId = jwtPayload?.sub as string | undefined;
+  if (!betterAuthUserId) {
+    return context.json(
+      { error: 'Unauthorized', message: 'Missing subject in token' },
+      401
+    );
+  }
+  const database = drizzle(context.env.DB, { schema });
+  const user = await fetchUserByBetterAuthId(database, betterAuthUserId);
+  if (!user) {
+    return context.json(
+      {
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
+  }
+  const { name, role: _role } = context.req.valid('json');
+  const updatedUser = await updateUserProfile(database, user.id, { name });
+  if (!updatedUser) {
+    return context.json(
+      {
+        error: {
+          code: 'UPDATE_FAILED',
+          message: 'Failed to update user profile',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      500
+    );
+  }
+  return context.json(formatUserResponse(updatedUser), 200);
 });
 
 app.doc('/api/docs', {
