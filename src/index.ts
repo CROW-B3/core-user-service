@@ -1,41 +1,13 @@
 import type { Environment } from './types';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { drizzle } from 'drizzle-orm/d1';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { poweredBy } from 'hono/powered-by';
-import { createLogger } from './config/logger';
-import * as schema from './db/schema';
-import { createJWTMiddleware } from './middleware/jwt';
-import {
-  CheckEmailsExistRoute,
-  CreateDirectUserRoute,
-  CreateUserRoute,
-  GetCurrentUserRoute,
-  GetUsersByOrganizationRoute,
-  HelloWorldRoute,
-  OnboardUserRoute,
-  UpdateUserProfileRoute,
-  UploadProfilePictureRoute,
-} from './routes';
-import { HealthCheckRoute, ReadinessCheckRoute } from './routes/health';
-import {
-  associateUserWithOrganization,
-  checkUserExists,
-  createUser,
-  createUserRecord,
-  fetchUserByBetterAuthId,
-  fetchUserById,
-  fetchUsersByOrganizationId,
-  findExistingEmailAddresses,
-  updateUserProfile,
-  uploadProfilePictureToR2,
-  validateUserCreationPayload,
-} from './services/user-service';
-import { handleErrorResponse } from './utils/error-handler';
-import { formatUserResponse } from './utils/formatters';
+import { HelloWorldRoute } from './routes';
 
-const localDevelopmentUserCache = new Map<
+// In-memory user storage for local development
+// Maps authId -> user object
+const userCache = new Map<
   string,
   {
     id: string;
@@ -48,7 +20,6 @@ const localDevelopmentUserCache = new Map<
 >();
 
 const app = new OpenAPIHono<{ Bindings: Environment }>();
-
 app.use(poweredBy());
 app.use(logger());
 app.use(
@@ -85,22 +56,34 @@ app.post('/api/v1/user-builders/:id/finalize', async c => {
     authId,
   });
 
+  // Create and store user
   const userId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
 
   const user = {
     id: userId,
-    authId,
+    authId: authId || builderId, // Use authId from request, fallback to builderId
     email,
     name,
     role,
     createdAt,
   };
 
-  localDevelopmentUserCache.set(user.authId, user);
+  // Store in cache for lookup
+  userCache.set(user.authId, user);
   console.warn(`[User Service] Cached user with authId: ${user.authId}`);
 
-  return c.json(user, 200);
+  return c.json(
+    {
+      id: userId,
+      builderId,
+      email,
+      name,
+      role,
+      createdAt,
+    },
+    200
+  );
 });
 
 app.post('/api/v1/billing-builders', async c => {
@@ -129,7 +112,8 @@ app.post('/api/v1/billing-builders/:id/finalize', async c => {
 app.get('/api/v1/users/by-auth-id/:authId', async c => {
   const authId = c.req.param('authId');
 
-  const user = localDevelopmentUserCache.get(authId);
+  // Look up user in cache
+  const user = userCache.get(authId);
 
   if (!user) {
     console.warn(`[User Service] User not found for authId: ${authId}`);
@@ -156,342 +140,11 @@ app.post('/api/v1/users/check-emails', async c => {
   );
 });
 
-app.openapi(CheckEmailsExistRoute, async context => {
-  const database = drizzle(context.env.DB, { schema });
-  const { emails } = context.req.valid('json');
-
-  const existingEmails = await findExistingEmailAddresses(database, emails);
-
-  return context.json({ existingEmails });
-});
-
-app.openapi(CreateUserRoute, async context => {
-  const database = drizzle(context.env.DB, { schema });
-  const body = context.req.valid('json');
-
-  const user = await createUser(
-    database,
-    body.betterAuthUserId,
-    body.organizationId,
-    body.email,
-    body.name,
-    (body.role || 'member') as 'admin' | 'member',
-    body.modules || { web: true, cctv: true, social: true },
-    body.onboardingId
-  );
-
-  return context.json(formatUserResponse(user), 201);
-});
-
-app.openapi(CreateDirectUserRoute, async context => {
-  const database = drizzle(context.env.DB, { schema });
-  const body = context.req.valid('json');
-
-  const validationError = validateUserCreationPayload(body);
-  if (validationError) {
-    return context.json(
-      {
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: validationError,
-          timestamp: new Date().toISOString(),
-        },
-      },
-      400
-    );
-  }
-
-  const userAlreadyExists = await checkUserExists(database, body.email);
-  if (userAlreadyExists) {
-    return context.json(
-      {
-        error: {
-          code: 'USER_ALREADY_EXISTS',
-          message: 'A user with this email already exists',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      409
-    );
-  }
-
-  const role = body.role ?? 'member';
-  const user = await createUserRecord(
-    database,
-    body.email,
-    body.name,
-    body.organizationId,
-    role
-  );
-
-  await associateUserWithOrganization(
-    database,
-    user.id,
-    body.organizationId,
-    role
-  );
-
-  return context.json(formatUserResponse(user), 201);
-});
-
-app.openapi(UploadProfilePictureRoute, async context => {
-  const jwtPayload = context.get('jwtPayload');
-  const { id } = context.req.valid('param');
-
-  if (
-    !context.get('isSystem') &&
-    jwtPayload?.sub !== id &&
-    !jwtPayload?.organizationId
-  )
-    return context.json({ error: 'Forbidden', message: 'Access denied' }, 403);
-
-  const database = drizzle(context.env.DB, { schema });
-
-  const user = await fetchUserById(database, id);
-  if (!user)
-    return context.json(
-      {
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'User not found',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      404
-    );
-
-  const formData = await context.req.formData();
-  const file = formData.get('file') as File;
-
-  if (!file)
-    return context.json(
-      {
-        error: {
-          code: 'NO_FILE_PROVIDED',
-          message: 'No file provided',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      400
-    );
-
-  const maximumFileSizeInBytes = 5 * 1024 * 1024;
-  if (file.size > maximumFileSizeInBytes)
-    return context.json(
-      {
-        error: {
-          code: 'FILE_SIZE_EXCEEDED',
-          message: 'File size exceeds 5MB limit',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      400
-    );
-
-  const allowedImageMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-  if (!allowedImageMimeTypes.includes(file.type))
-    return context.json(
-      {
-        error: {
-          code: 'INVALID_FILE_TYPE',
-          message: 'Invalid file type. Only JPG, PNG, and WebP are allowed',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      400
-    );
-
-  const url = await uploadProfilePictureToR2(context.env.R2_BUCKET, id, file);
-
-  return context.json({ url });
-});
-
-app.openapi(UpdateUserProfileRoute, async context => {
-  const jwtPayload = context.get('jwtPayload');
-  const { id } = context.req.valid('param');
-
-  if (
-    !context.get('isSystem') &&
-    jwtPayload?.sub !== id &&
-    !jwtPayload?.organizationId
-  )
-    return context.json({ error: 'Forbidden', message: 'Access denied' }, 403);
-
-  const database = drizzle(context.env.DB, { schema });
-  const body = context.req.valid('json');
-
-  const user = await fetchUserById(database, id);
-  if (!user)
-    return context.json(
-      {
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'User not found',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      404
-    );
-
-  const updatedUser = await updateUserProfile(database, id, body);
-
-  if (!updatedUser)
-    return context.json(
-      {
-        error: {
-          code: 'UPDATE_FAILED',
-          message: 'Failed to update user profile',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      500
-    );
-
-  return context.json(formatUserResponse(updatedUser));
-});
-
-app.openapi(GetUsersByOrganizationRoute, async context => {
-  const database = drizzle(context.env.DB, { schema });
-  const { organizationId } = context.req.valid('param');
-
-  const users = await fetchUsersByOrganizationId(database, organizationId);
-
-  if (!users || users.length === 0) {
-    return context.json(
-      {
-        error: {
-          code: 'NO_USERS_FOUND',
-          message: 'No users found for this organization',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      404
-    );
-  }
-
-  return context.json({
-    users: users.map(formatUserResponse),
-    total: users.length,
-  });
-});
-
-app.openapi(HealthCheckRoute, c => {
-  return c.json(
-    {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      service: 'core-user-service',
-      version: '1.0.0',
-      environment: c.env.ENVIRONMENT || 'prod',
-    },
-    200
-  );
-});
-
-app.openapi(ReadinessCheckRoute, async c => {
-  let isDatabaseHealthy = false;
-  try {
-    const database = drizzle(c.env.DB, { schema });
-    await database.run('SELECT 1');
-    isDatabaseHealthy = true;
-  } catch {}
-
-  const isReady = isDatabaseHealthy;
-  return c.json(
-    { ready: isReady, checks: { database: isDatabaseHealthy } },
-    isReady ? 200 : 503
-  );
-});
-
-app.use('/api/v1/users/me', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
-app.use('/api/v1/users/onboard', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
-
-app.openapi(GetCurrentUserRoute, async context => {
-  const jwtPayload = context.get('jwtPayload');
-  const betterAuthUserId = jwtPayload?.sub as string | undefined;
-  if (!betterAuthUserId) {
-    return context.json(
-      { error: 'Unauthorized', message: 'Missing subject in token' },
-      401
-    );
-  }
-  const database = drizzle(context.env.DB, { schema });
-  const user = await fetchUserByBetterAuthId(database, betterAuthUserId);
-  if (!user) {
-    return context.json(
-      {
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'User not found',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      404
-    );
-  }
-  return context.json(formatUserResponse(user), 200);
-});
-
-app.openapi(OnboardUserRoute, async context => {
-  const jwtPayload = context.get('jwtPayload');
-  const betterAuthUserId = jwtPayload?.sub as string | undefined;
-  if (!betterAuthUserId) {
-    return context.json(
-      { error: 'Unauthorized', message: 'Missing subject in token' },
-      401
-    );
-  }
-  const database = drizzle(context.env.DB, { schema });
-  const user = await fetchUserByBetterAuthId(database, betterAuthUserId);
-  if (!user) {
-    return context.json(
-      {
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'User not found',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      404
-    );
-  }
-  const { name, role: _role } = context.req.valid('json');
-  const updatedUser = await updateUserProfile(database, user.id, { name });
-  if (!updatedUser) {
-    return context.json(
-      {
-        error: {
-          code: 'UPDATE_FAILED',
-          message: 'Failed to update user profile',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      500
-    );
-  }
-  return context.json(formatUserResponse(updatedUser), 200);
-});
-
-app.doc('/api/docs', {
+app.doc('/docs', {
   openapi: '3.0.0',
   info: {
     version: '1.0.0',
-    title: 'CROW User API',
-    description: 'User management service for CROW platform',
+    title: 'User Service API',
   },
 });
-
-app.notFound(c =>
-  c.json({ error: 'Not Found', message: 'Route not found' }, 404)
-);
-
-app.onError((error, c) => {
-  const logger = createLogger(c.env);
-  return handleErrorResponse(c, error, logger);
-});
-
 export default app;
