@@ -72,6 +72,24 @@ export const FinalizeUserBuilderSchema = z
   })
   .openapi('FinalizeUserBuilder');
 
+export const CreateUserSchema = z
+  .object({
+    betterAuthUserId: z.string(),
+    organizationId: z.string(),
+    email: z.string().email(),
+    name: z.string(),
+    role: z.string().optional(),
+    modules: z
+      .object({
+        web: z.boolean(),
+        cctv: z.boolean(),
+        social: z.boolean(),
+      })
+      .optional(),
+    onboardingId: z.string().optional(),
+  })
+  .openapi('CreateUser');
+
 export const UpdateUserProfileSchema = z
   .object({
     name: z.string().optional(),
@@ -84,3 +102,13 @@ export const ProfilePictureUploadResponseSchema = z
     url: z.string(),
   })
   .openapi('ProfilePictureUploadResponse');
+
+export const CreateDirectUserSchema = z
+  .object({
+    email: z.string().email(),
+    name: z.string(),
+    organizationId: z.string(),
+    role: z.enum(['owner', 'admin', 'member']).optional(),
+    sendWelcomeEmail: z.boolean().optional(),
+  })
+  .openapi('CreateDirectUser');
