@@ -1,0 +1,25 @@
+meta {
+  name: Check User Emails
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/users/check-emails
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "emails": ["user@example.com", "another@example.com"]
+  }
+}
