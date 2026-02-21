@@ -76,7 +76,10 @@ export const handleErrorResponse = (
 
   logErrorWithContext(logger, error);
 
-  return c.json(buildErrorResponse(code, message), statusCode);
+  return c.json(
+    buildErrorResponse(code, message),
+    statusCode as Parameters<typeof c.json>[1]
+  );
 };
 
 export const createServiceError = (
@@ -92,5 +95,5 @@ export const createServiceError = (
 export const wrapAsyncHandler = <T>(
   handler: () => Promise<T>
 ): Promise<[T, null] | [null, Error]> => {
-  return tryCatch(handler);
+  return tryCatch(handler()) as unknown as Promise<[T, null] | [null, Error]>;
 };

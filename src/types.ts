@@ -6,6 +6,10 @@ export interface Environment {
   BETTER_AUTH_SECRET: string;
   AUTH_SERVICE_URL: string;
   ENVIRONMENT: 'local' | 'dev' | 'prod';
+  SERVICE_API_KEY_AUTH?: string;
+  SERVICE_API_KEY_ORGANIZATION?: string;
+  SERVICE_API_KEY_BILLING?: string;
+  SERVICE_API_KEY_NOTIFICATION?: string;
 }
 
 export const HelloWorldSchema = z
