@@ -263,3 +263,50 @@ export const CreateDirectUserRoute = createRoute({
     },
   },
 });
+
+export const OnboardUserRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/users/onboard',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            name: z.string(),
+            role: z.enum(['admin', 'member']),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: UserSchema } },
+      description: 'User profile updated after signup',
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    404: {
+      description: 'User not found',
+    },
+  },
+});
+
+export const GetCurrentUserRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/users/me',
+  request: {},
+  responses: {
+    200: {
+      content: { 'application/json': { schema: UserSchema } },
+      description: 'Current user profile',
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    404: {
+      description: 'User not found',
+    },
+  },
+});

@@ -55,7 +55,7 @@ export const requirePermission = (permission: Permission) => {
     }
 
     const payload = c.get('jwtPayload');
-    const permissions = payload?.permissions || [];
+    const permissions = (payload?.permissions as string[]) || [];
 
     if (!permissions.includes(permission)) {
       return c.json(
