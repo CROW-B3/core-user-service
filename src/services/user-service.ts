@@ -100,7 +100,7 @@ export const createUser = async (
     email,
     name,
     permissions: JSON.stringify(permissions),
-    status: 'pending',
+    status: 'active',
     role,
     onboardingId,
     profilePictureUrl: null,
