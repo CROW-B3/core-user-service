@@ -140,7 +140,9 @@ app.get('/api/v1/users/by-auth-id/:authId', async c => {
   }
 
   console.warn(`[User Service] Found user for authId: ${authId}`, user.id);
-  return c.json(formatUserResponse(user), 200);
+  const response = c.json(formatUserResponse(user), 200);
+  response.headers.set('Cache-Control', 'private, no-store');
+  return response;
 });
 
 app.post('/api/v1/users/check-emails', async c => {
@@ -380,7 +382,9 @@ app.openapi(UpdateUserProfileRoute, async context => {
       500
     );
 
-  return context.json(formatUserResponse(updatedUser));
+  const profileResponse = context.json(formatUserResponse(updatedUser));
+  profileResponse.headers.set('Cache-Control', 'private, no-store');
+  return profileResponse;
 });
 
 app.openapi(GetUsersByOrganizationRoute, async context => {
@@ -466,7 +470,9 @@ app.openapi(GetCurrentUserRoute, async context => {
       404
     );
   }
-  return context.json(formatUserResponse(user), 200);
+  const meResponse = context.json(formatUserResponse(user), 200);
+  meResponse.headers.set('Cache-Control', 'private, no-store');
+  return meResponse;
 });
 
 app.openapi(OnboardUserRoute, async context => {
@@ -518,7 +524,9 @@ app.openapi(GetUserRoute, async context => {
     return context.json({ error: 'User not found' }, 404);
   }
 
-  return context.json(formatUserResponse(user));
+  const userResponse = context.json(formatUserResponse(user));
+  userResponse.headers.set('Cache-Control', 'private, no-store');
+  return userResponse;
 });
 
 app.openapi(GetUserPermissionsRoute, async context => {
@@ -561,7 +569,9 @@ app.openapi(GetUserPermissionsRoute, async context => {
       : undefined,
   };
 
-  return context.json(permissions);
+  const permResponse = context.json(permissions);
+  permResponse.headers.set('Cache-Control', 'private, no-store');
+  return permResponse;
 });
 
 app.doc('/api/docs', {
