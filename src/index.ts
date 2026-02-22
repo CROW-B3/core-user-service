@@ -12,6 +12,8 @@ import {
   CreateDirectUserRoute,
   CreateUserRoute,
   GetCurrentUserRoute,
+  GetUserPermissionsRoute,
+  GetUserRoute,
   GetUsersByOrganizationRoute,
   HelloWorldRoute,
   OnboardUserRoute,
@@ -128,16 +130,17 @@ app.post('/api/v1/billing-builders/:id/finalize', async c => {
 
 app.get('/api/v1/users/by-auth-id/:authId', async c => {
   const authId = c.req.param('authId');
+  const database = drizzle(c.env.DB, { schema });
 
-  const user = localDevelopmentUserCache.get(authId);
+  const user = await fetchUserByBetterAuthId(database, authId);
 
   if (!user) {
     console.warn(`[User Service] User not found for authId: ${authId}`);
     return c.json({ error: 'User not found' }, 404);
   }
 
-  console.warn(`[User Service] Found user for authId: ${authId}`, user);
-  return c.json(user, 200);
+  console.warn(`[User Service] Found user for authId: ${authId}`, user.id);
+  return c.json(formatUserResponse(user), 200);
 });
 
 app.post('/api/v1/users/check-emails', async c => {
@@ -234,16 +237,16 @@ app.openapi(CreateDirectUserRoute, async context => {
   return context.json(formatUserResponse(user), 201);
 });
 
+app.use('/api/v1/users/:id/profile-picture', async (c, next) =>
+  createJWTMiddleware(c.env)(c, next)
+);
+app.use('/api/v1/users/:id/profile', async (c, next) =>
+  createJWTMiddleware(c.env)(c, next)
+);
+
 app.openapi(UploadProfilePictureRoute, async context => {
   const jwtPayload = context.get('jwtPayload');
   const { id } = context.req.valid('param');
-
-  if (
-    !context.get('isSystem') &&
-    jwtPayload?.sub !== id &&
-    !jwtPayload?.organizationId
-  )
-    return context.json({ error: 'Forbidden', message: 'Access denied' }, 403);
 
   const database = drizzle(context.env.DB, { schema });
 
@@ -259,6 +262,24 @@ app.openapi(UploadProfilePictureRoute, async context => {
       },
       404
     );
+
+  // Authorization: allow if system token, if the authenticated user owns this
+  // profile (JWT sub is betterAuthUserId, not internal ID), or if the requester
+  // belongs to the same organization.
+  if (!context.get('isSystem')) {
+    const isOwner = jwtPayload?.sub === user.betterAuthUserId;
+    const orgFromJwt = jwtPayload?.organizationId as string | undefined;
+    const orgFromHeader = context.req.header('X-Organization-Id');
+    const requesterOrgId = orgFromJwt || orgFromHeader;
+    const isOrgMember =
+      !!requesterOrgId && requesterOrgId === user.organizationId;
+    if (!isOwner && !isOrgMember) {
+      return context.json(
+        { error: 'Forbidden', message: 'Access denied' },
+        403
+      );
+    }
+  }
 
   const formData = await context.req.formData();
   const file = formData.get('file') as File;
@@ -310,13 +331,6 @@ app.openapi(UpdateUserProfileRoute, async context => {
   const jwtPayload = context.get('jwtPayload');
   const { id } = context.req.valid('param');
 
-  if (
-    !context.get('isSystem') &&
-    jwtPayload?.sub !== id &&
-    !jwtPayload?.organizationId
-  )
-    return context.json({ error: 'Forbidden', message: 'Access denied' }, 403);
-
   const database = drizzle(context.env.DB, { schema });
   const body = context.req.valid('json');
 
@@ -332,6 +346,25 @@ app.openapi(UpdateUserProfileRoute, async context => {
       },
       404
     );
+
+  // Authorization: allow if system token, if the authenticated user owns this
+  // profile (JWT sub is betterAuthUserId, not internal ID), or if the requester
+  // belongs to the same organization (via JWT claim or X-Organization-Id header
+  // injected by the API gateway from the active session).
+  if (!context.get('isSystem')) {
+    const isOwner = jwtPayload?.sub === user.betterAuthUserId;
+    const orgFromJwt = jwtPayload?.organizationId as string | undefined;
+    const orgFromHeader = context.req.header('X-Organization-Id');
+    const requesterOrgId = orgFromJwt || orgFromHeader;
+    const isOrgMember =
+      !!requesterOrgId && requesterOrgId === user.organizationId;
+    if (!isOwner && !isOrgMember) {
+      return context.json(
+        { error: 'Forbidden', message: 'Access denied' },
+        403
+      );
+    }
+  }
 
   const updatedUser = await updateUserProfile(database, id, body);
 
@@ -474,6 +507,61 @@ app.openapi(OnboardUserRoute, async context => {
     );
   }
   return context.json(formatUserResponse(updatedUser), 200);
+});
+
+app.openapi(GetUserRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const { id } = context.req.valid('param');
+
+  const user = await fetchUserById(database, id);
+  if (!user) {
+    return context.json({ error: 'User not found' }, 404);
+  }
+
+  return context.json(formatUserResponse(user));
+});
+
+app.openapi(GetUserPermissionsRoute, async context => {
+  const database = drizzle(context.env.DB, { schema });
+  const { id } = context.req.valid('param');
+
+  const user = await fetchUserById(database, id);
+  if (!user) {
+    return context.json({ error: 'User not found' }, 404);
+  }
+
+  let rawPermissions: string[] = [];
+  try {
+    rawPermissions = JSON.parse(user.permissions) as string[];
+  } catch {
+    rawPermissions = [];
+  }
+
+  const permissions = {
+    interactions: rawPermissions.includes('interactions:read'),
+    patterns: rawPermissions.includes('patterns:read'),
+    teamManagement: rawPermissions.includes('team:manage'),
+    apiKeyManagement: rawPermissions.includes('api_keys:manage'),
+    chat: rawPermissions.includes('chat:read')
+      ? {
+          enabled: true,
+          components: [
+            ...(rawPermissions.includes('chat:web:read')
+              ? ['web' as const]
+              : []),
+            ...(rawPermissions.includes('chat:cctv:read')
+              ? ['cctv' as const]
+              : []),
+            ...(rawPermissions.includes('chat:social:read')
+              ? ['social' as const]
+              : []),
+          ],
+          lookbackWindow: 'all' as const,
+        }
+      : undefined,
+  };
+
+  return context.json(permissions);
 });
 
 app.doc('/api/docs', {
