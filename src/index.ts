@@ -518,7 +518,6 @@ app.openapi(HealthCheckRoute, c => {
     {
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      service: 'user-service',
     },
     200
   );

@@ -3,7 +3,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 const HealthResponseSchema = z.object({
   status: z.literal('healthy'),
   timestamp: z.string(),
-  service: z.string(),
 });
 
 const ReadinessResponseSchema = z.object({
