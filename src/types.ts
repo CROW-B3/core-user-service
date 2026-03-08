@@ -10,6 +10,7 @@ export interface Environment {
   SERVICE_API_KEY_ORGANIZATION?: string;
   SERVICE_API_KEY_BILLING?: string;
   SERVICE_API_KEY_NOTIFICATION?: string;
+  INTERNAL_GATEWAY_KEY?: string;
 }
 
 export const HelloWorldSchema = z
@@ -96,7 +97,7 @@ export const CreateUserSchema = z
 
 export const UpdateUserProfileSchema = z
   .object({
-    name: z.string().optional(),
+    name: z.string().trim().min(1).max(255).optional(),
     profilePictureUrl: z.string().optional(),
   })
   .openapi('UpdateUserProfile');

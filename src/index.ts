@@ -3,7 +3,6 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { drizzle } from 'drizzle-orm/d1';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { poweredBy } from 'hono/powered-by';
 import { createLogger } from './config/logger';
 import * as schema from './db/schema';
 import { createJWTMiddleware } from './middleware/jwt';
@@ -17,6 +16,7 @@ import {
   GetUsersByOrganizationRoute,
   HelloWorldRoute,
   OnboardUserRoute,
+  SearchUsersByEmailPrefixRoute,
   UpdateUserProfileRoute,
   UploadProfilePictureRoute,
 } from './routes';
@@ -30,6 +30,7 @@ import {
   fetchUserById,
   fetchUsersByOrganizationId,
   findExistingEmailAddresses,
+  searchUsersByEmailPrefix,
   updateUserProfile,
   uploadProfilePictureToR2,
   validateUserCreationPayload,
@@ -49,10 +50,33 @@ const localDevelopmentUserCache = new Map<
   }
 >();
 
-const app = new OpenAPIHono<{ Bindings: Environment }>();
+const app = new OpenAPIHono<{ Bindings: Environment }>({
+  defaultHook: (result, c) => {
+    if (!result.success) {
+      return c.json(
+        { error: 'Bad Request', message: 'Invalid request parameters' },
+        400
+      );
+    }
+  },
+});
 
-app.use(poweredBy());
 app.use(logger());
+
+app.use('/api/v1/*', async (c, next) => {
+  if (!c.env.INTERNAL_GATEWAY_KEY) {
+    return c.json({ error: 'Service unavailable' }, 503);
+  }
+  const key = c.req.header('X-Internal-Key');
+  if (!key || key !== c.env.INTERNAL_GATEWAY_KEY) {
+    return c.json(
+      { error: 'Unauthorized', message: 'Authentication required' },
+      401
+    );
+  }
+  return next();
+});
+
 app.use(
   '/*',
   cors({
@@ -69,23 +93,40 @@ app.openapi(HelloWorldRoute, c => {
   return c.json({ text: 'Hello Hono!' });
 });
 
+// Service-to-service write endpoints — require X-Service-API-Key matching a known key
+function requireServiceApiKey(env: Environment, req: Request): Response | null {
+  const knownKeys = new Set(
+    [
+      env.SERVICE_API_KEY_AUTH,
+      env.SERVICE_API_KEY_ORGANIZATION,
+      env.SERVICE_API_KEY_BILLING,
+    ].filter(Boolean)
+  );
+  const provided = req.headers.get('X-Service-API-Key');
+  if (!provided || !knownKeys.has(provided)) {
+    return Response.json(
+      { error: 'Unauthorized', message: 'Service authentication required' },
+      { status: 401 }
+    );
+  }
+  return null;
+}
+
 app.post('/api/v1/user-builders', async c => {
+  const authError = requireServiceApiKey(c.env, c.req.raw);
+  if (authError) return authError;
   const builderId = crypto.randomUUID();
   return c.json({ id: builderId }, 201);
 });
 
 app.post('/api/v1/user-builders/:id/finalize', async c => {
+  const authError = requireServiceApiKey(c.env, c.req.raw);
+  if (authError) return authError;
   const builderId = c.req.param('id');
   const body = await c.req.json();
   const { email, name, role, authId } = body;
 
-  console.warn('Finalizing user-builder:', {
-    builderId,
-    email,
-    name,
-    role,
-    authId,
-  });
+  console.warn('[User Service] Finalizing user-builder:', builderId);
 
   const userId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
@@ -100,17 +141,20 @@ app.post('/api/v1/user-builders/:id/finalize', async c => {
   };
 
   localDevelopmentUserCache.set(user.authId, user);
-  console.warn(`[User Service] Cached user with authId: ${user.authId}`);
 
   return c.json(user, 200);
 });
 
 app.post('/api/v1/billing-builders', async c => {
+  const authError = requireServiceApiKey(c.env, c.req.raw);
+  if (authError) return authError;
   const builderId = crypto.randomUUID();
   return c.json({ id: builderId }, 201);
 });
 
 app.post('/api/v1/billing-builders/:id/finalize', async c => {
+  const authError = requireServiceApiKey(c.env, c.req.raw);
+  if (authError) return authError;
   const builderId = c.req.param('id');
   const body = await c.req.json();
 
@@ -132,6 +176,32 @@ app.get('/api/v1/users/by-auth-id/:authId', async c => {
   const authId = c.req.param('authId');
   const database = drizzle(c.env.DB, { schema });
 
+  // Allow service-to-service calls identified by X-Service-API-Key only.
+  // For user-initiated calls (Bearer JWT), restrict to own identity: JWT sub must match authId.
+  // If neither credential is present, reject with 401 (fail-closed).
+  const isServiceCall = !!c.req.header('X-Service-API-Key');
+  if (!isServiceCall) {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return c.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        401
+      );
+    }
+    try {
+      const { jwtVerify, createRemoteJWKSet } = await import('jose');
+      const jwks = createRemoteJWKSet(
+        new URL(`${c.env.AUTH_SERVICE_URL}/api/v1/auth/jwks`)
+      );
+      const { payload } = await jwtVerify(authHeader.slice(7), jwks);
+      if (payload.sub !== authId) {
+        return c.json({ error: 'Forbidden', message: 'Access denied' }, 403);
+      }
+    } catch {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+  }
+
   const user = await fetchUserByBetterAuthId(database, authId);
 
   if (!user) {
@@ -145,20 +215,24 @@ app.get('/api/v1/users/by-auth-id/:authId', async c => {
   return response;
 });
 
-app.post('/api/v1/users/check-emails', async c => {
-  const body = await c.req.json();
-  const { emails } = body;
+app.use('/api/v1/users/check-emails', async (c, next) => {
+  const authError = requireServiceApiKey(c.env, c.req.raw);
+  if (authError) return authError;
+  return next();
+});
 
-  console.warn('Checking emails:', emails);
+app.use('/api/v1/users', async (c, next) => {
+  if (c.req.method === 'POST') {
+    const authError = requireServiceApiKey(c.env, c.req.raw);
+    if (authError) return authError;
+  }
+  return next();
+});
 
-  // For now, return that none of the emails exist
-  return c.json(
-    {
-      existingEmails: [],
-      availableEmails: emails,
-    },
-    200
-  );
+app.use('/api/v1/users/create', async (c, next) => {
+  const authError = requireServiceApiKey(c.env, c.req.raw);
+  if (authError) return authError;
+  return next();
 });
 
 app.openapi(CheckEmailsExistRoute, async context => {
@@ -168,6 +242,25 @@ app.openapi(CheckEmailsExistRoute, async context => {
   const existingEmails = await findExistingEmailAddresses(database, emails);
 
   return context.json({ existingEmails });
+});
+
+app.openapi(SearchUsersByEmailPrefixRoute, async context => {
+  const callerOrganizationId = context.req.header('X-Organization-Id');
+  if (!callerOrganizationId)
+    return context.json(
+      { error: 'Forbidden', message: 'Missing organization context' },
+      403
+    );
+
+  const { q } = context.req.valid('query');
+  const database = drizzle(context.env.DB, { schema });
+  const matchingUsers = await searchUsersByEmailPrefix(
+    database,
+    q,
+    callerOrganizationId
+  );
+
+  return context.json({ users: matchingUsers });
 });
 
 app.openapi(CreateUserRoute, async context => {
@@ -336,7 +429,8 @@ app.openapi(UpdateUserProfileRoute, async context => {
   const database = drizzle(context.env.DB, { schema });
   const body = context.req.valid('json');
 
-  const user = await fetchUserById(database, id);
+  const userById = await fetchUserById(database, id);
+  const user = userById ?? (await fetchUserByBetterAuthId(database, id));
   if (!user)
     return context.json(
       {
@@ -368,7 +462,7 @@ app.openapi(UpdateUserProfileRoute, async context => {
     }
   }
 
-  const updatedUser = await updateUserProfile(database, id, body);
+  const updatedUser = await updateUserProfile(database, user.id, body);
 
   if (!updatedUser)
     return context.json(
@@ -388,8 +482,15 @@ app.openapi(UpdateUserProfileRoute, async context => {
 });
 
 app.openapi(GetUsersByOrganizationRoute, async context => {
-  const database = drizzle(context.env.DB, { schema });
   const { organizationId } = context.req.valid('param');
+  const callerOrgId = context.req.header('X-Organization-Id');
+  if (!callerOrgId || callerOrgId !== organizationId) {
+    return context.json(
+      { error: 'Forbidden', message: 'Access denied to this organization' },
+      403
+    );
+  }
+  const database = drizzle(context.env.DB, { schema });
 
   const users = await fetchUsersByOrganizationId(database, organizationId);
 
@@ -417,9 +518,7 @@ app.openapi(HealthCheckRoute, c => {
     {
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      service: 'core-user-service',
-      version: '1.0.0',
-      environment: c.env.ENVIRONMENT || 'prod',
+      service: 'user-service',
     },
     200
   );
@@ -515,6 +614,13 @@ app.openapi(OnboardUserRoute, async context => {
   return context.json(formatUserResponse(updatedUser), 200);
 });
 
+app.use('/api/v1/users/:id', async (c, next) =>
+  createJWTMiddleware(c.env)(c, next)
+);
+app.use('/api/v1/users/:id/permissions', async (c, next) =>
+  createJWTMiddleware(c.env)(c, next)
+);
+
 app.openapi(GetUserRoute, async context => {
   const database = drizzle(context.env.DB, { schema });
   const { id } = context.req.valid('param');
@@ -522,6 +628,21 @@ app.openapi(GetUserRoute, async context => {
   const user = await fetchUserById(database, id);
   if (!user) {
     return context.json({ error: 'User not found' }, 404);
+  }
+
+  if (!context.get('isSystem')) {
+    const jwtPayload = context.get('jwtPayload');
+    const callerBetterAuthId = jwtPayload?.sub as string | undefined;
+    const callerOrgId = context.req.header('X-Organization-Id');
+    const isOwner =
+      !!callerBetterAuthId && callerBetterAuthId === user.betterAuthUserId;
+    const isSameOrg = !!callerOrgId && callerOrgId === user.organizationId;
+    if (!isOwner && !isSameOrg) {
+      return context.json(
+        { error: 'Forbidden', message: 'Access denied' },
+        403
+      ) as never;
+    }
   }
 
   const userResponse = context.json(formatUserResponse(user));
@@ -533,9 +654,26 @@ app.openapi(GetUserPermissionsRoute, async context => {
   const database = drizzle(context.env.DB, { schema });
   const { id } = context.req.valid('param');
 
-  const user = await fetchUserById(database, id);
+  const userById = await fetchUserById(database, id);
+  const user = userById ?? (await fetchUserByBetterAuthId(database, id));
   if (!user) {
     return context.json({ error: 'User not found' }, 404);
+  }
+
+  // Enforce ownership or same-org: fail closed if neither condition is met
+  if (!context.get('isSystem')) {
+    const jwtPayload = context.get('jwtPayload');
+    const callerBetterAuthId = jwtPayload?.sub as string | undefined;
+    const callerOrgId = context.req.header('X-Organization-Id');
+    const isOwner =
+      !!callerBetterAuthId && callerBetterAuthId === user.betterAuthUserId;
+    const isSameOrg = !!callerOrgId && callerOrgId === user.organizationId;
+    if (!isOwner && !isSameOrg) {
+      return context.json(
+        { error: 'Forbidden', message: 'Access denied' },
+        403
+      ) as never;
+    }
   }
 
   let rawPermissions: string[] = [];
