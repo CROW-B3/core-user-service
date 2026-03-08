@@ -7,7 +7,7 @@ export const requireOwnership = (resourceIdParam: string = 'id') => {
 
     if (c.get('isSystem')) return next();
 
-    if (jwtPayload?.sub !== resourceId && !jwtPayload?.organizationId) {
+    if (jwtPayload?.sub !== resourceId) {
       return c.json({ error: 'Forbidden', message: 'Access denied' }, 403);
     }
 

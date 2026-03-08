@@ -27,7 +27,24 @@ const buildErrorResponse = (code: string, message: string): ErrorResponse => ({
   },
 });
 
+const isZodValidationError = (error: unknown): boolean =>
+  isServiceError(error) && (error as { name?: string }).name === 'ZodError';
+
+const isMalformedJsonError = (error: unknown): boolean => {
+  if (!isServiceError(error)) return false;
+  const { name, message } = error as { name?: string; message?: string };
+  if (name === 'SyntaxError') return true;
+  if (typeof message !== 'string') return false;
+  return (
+    message.includes('Malformed JSON') ||
+    message.includes('Unexpected end of JSON') ||
+    message.includes('Unexpected token')
+  );
+};
+
 const extractStatusCodeFromError = (error: unknown): number => {
+  if (isZodValidationError(error)) return 400;
+  if (isMalformedJsonError(error)) return 400;
   if (!isServiceError(error) || !('statusCode' in error)) return 500;
 
   const statusCode = (error as ServiceError).statusCode;

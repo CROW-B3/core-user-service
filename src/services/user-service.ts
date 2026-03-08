@@ -1,5 +1,5 @@
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { fetchPermissionsForRole, Permission } from '../types/permissions';
 
@@ -42,6 +42,25 @@ export const findExistingEmailAddresses = async (
     .where(inArray(schema.user.email, emails));
 
   return existingUsers.map(user => user.email);
+};
+
+export const searchUsersByEmailPrefix = async (
+  database: Database,
+  emailPrefix: string,
+  organizationId: string
+): Promise<{ email: string; name: string }[]> => {
+  const results = await database
+    .select({ email: schema.user.email, name: schema.user.name })
+    .from(schema.user)
+    .where(
+      and(
+        like(schema.user.email, `${emailPrefix}%`),
+        eq(schema.user.organizationId, organizationId)
+      )
+    )
+    .limit(10);
+
+  return results;
 };
 
 export const uploadProfilePictureToR2 = async (
