@@ -4,8 +4,6 @@ const HealthResponseSchema = z.object({
   status: z.literal('healthy'),
   timestamp: z.string(),
   service: z.string(),
-  version: z.string(),
-  environment: z.string(),
 });
 
 const ReadinessResponseSchema = z.object({

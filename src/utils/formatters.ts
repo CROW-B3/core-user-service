@@ -7,9 +7,12 @@ export const formatUserBuilderResponse = (builder: UserBuilder) => ({
   createdAt: new Date(builder.createdAt).toISOString(),
 });
 
-export const formatUserResponse = (user: User) => ({
-  ...user,
-  permissions: JSON.parse(user.permissions),
-  createdAt: new Date(user.createdAt).toISOString(),
-  updatedAt: new Date(user.updatedAt).toISOString(),
-});
+export const formatUserResponse = (user: User) => {
+  const { betterAuthUserId: _omit, ...rest } = user;
+  return {
+    ...rest,
+    permissions: JSON.parse(user.permissions),
+    createdAt: new Date(user.createdAt).toISOString(),
+    updatedAt: new Date(user.updatedAt).toISOString(),
+  };
+};

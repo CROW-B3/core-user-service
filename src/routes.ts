@@ -81,7 +81,7 @@ export const GetUserRoute = createRoute({
   method: 'get',
   path: '/api/v1/users/{id}',
   request: {
-    params: z.object({ id: z.string() }),
+    params: z.object({ id: z.string().uuid() }),
   },
   responses: {
     200: {
@@ -115,7 +115,7 @@ export const GetUserPermissionsRoute = createRoute({
   method: 'get',
   path: '/api/v1/users/{id}/permissions',
   request: {
-    params: z.object({ id: z.string() }),
+    params: z.object({ id: z.string().uuid() }),
   },
   responses: {
     200: {
@@ -203,7 +203,7 @@ export const GetUsersByOrganizationRoute = createRoute({
   method: 'get',
   path: '/api/v1/users/by-organization/{organizationId}',
   request: {
-    params: z.object({ organizationId: z.string() }),
+    params: z.object({ organizationId: z.string().uuid() }),
   },
   responses: {
     200: {
@@ -307,6 +307,39 @@ export const GetCurrentUserRoute = createRoute({
     },
     404: {
       description: 'User not found',
+    },
+  },
+});
+
+export const SearchUsersByEmailPrefixRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/users/search-email',
+  request: {
+    query: z.object({
+      q: z.string().min(1).max(100),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            users: z.array(
+              z.object({
+                email: z.string(),
+                name: z.string(),
+              })
+            ),
+          }),
+        },
+      },
+      description: 'Users matching email prefix',
+    },
+    400: {
+      description: 'Invalid query parameter',
+    },
+    403: {
+      description: 'Missing or invalid organization context',
     },
   },
 });
