@@ -176,10 +176,13 @@ app.get('/api/v1/users/by-auth-id/:authId', async c => {
   const authId = c.req.param('authId');
   const database = drizzle(c.env.DB, { schema });
 
-  // Allow service-to-service calls identified by X-Service-API-Key only.
+  // Allow service-to-service calls identified by X-Service-API-Key or X-Internal-Key.
   // For user-initiated calls (Bearer JWT), restrict to own identity: JWT sub must match authId.
   // If neither credential is present, reject with 401 (fail-closed).
-  const isServiceCall = !!c.req.header('X-Service-API-Key');
+  const isServiceCall =
+    !!c.req.header('X-Service-API-Key') ||
+    (!!c.req.header('X-Internal-Key') &&
+      c.req.header('X-Internal-Key') === c.env.INTERNAL_GATEWAY_KEY);
   if (!isServiceCall) {
     const authHeader = c.req.header('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
