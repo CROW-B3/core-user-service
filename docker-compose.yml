@@ -1,0 +1,7 @@
+services:
+  user-service:
+    build: .
+    ports:
+      - '8002:8080'
+    environment:
+      - ENVIRONMENT=local
