@@ -17,6 +17,7 @@ import {
   HelloWorldRoute,
   OnboardUserRoute,
   SearchUsersByEmailPrefixRoute,
+  UpdateCurrentUserProfileRoute,
   UpdateUserProfileRoute,
   UploadProfilePictureRoute,
 } from './routes';
@@ -497,22 +498,9 @@ app.openapi(GetUsersByOrganizationRoute, async context => {
 
   const users = await fetchUsersByOrganizationId(database, organizationId);
 
-  if (!users || users.length === 0) {
-    return context.json(
-      {
-        error: {
-          code: 'NO_USERS_FOUND',
-          message: 'No users found for this organization',
-          timestamp: new Date().toISOString(),
-        },
-      },
-      404
-    );
-  }
-
   return context.json({
-    users: users.map(formatUserResponse),
-    total: users.length,
+    users: (users ?? []).map(formatUserResponse),
+    total: (users ?? []).length,
   });
 });
 
@@ -574,6 +562,48 @@ app.openapi(GetCurrentUserRoute, async context => {
   const meResponse = context.json(formatUserResponse(user), 200);
   meResponse.headers.set('Cache-Control', 'private, no-store');
   return meResponse;
+});
+
+app.openapi(UpdateCurrentUserProfileRoute, async context => {
+  const jwtPayload = context.get('jwtPayload');
+  const betterAuthUserId = jwtPayload?.sub as string | undefined;
+  if (!betterAuthUserId) {
+    return context.json(
+      { error: 'Unauthorized', message: 'Missing subject in token' },
+      401
+    );
+  }
+  const database = drizzle(context.env.DB, { schema });
+  const user = await fetchUserByBetterAuthId(database, betterAuthUserId);
+  if (!user) {
+    return context.json(
+      {
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
+  }
+  const body = context.req.valid('json');
+  const updatedUser = await updateUserProfile(database, user.id, body);
+  if (!updatedUser) {
+    return context.json(
+      {
+        error: {
+          code: 'UPDATE_FAILED',
+          message: 'Failed to update user profile',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      500
+    );
+  }
+  const meUpdateResponse = context.json(formatUserResponse(updatedUser), 200);
+  meUpdateResponse.headers.set('Cache-Control', 'private, no-store');
+  return meUpdateResponse;
 });
 
 app.openapi(OnboardUserRoute, async context => {
