@@ -218,11 +218,7 @@ app.get('/api/v1/users/by-auth-id/:authId', async c => {
   return response;
 });
 
-app.use('/api/v1/users/check-emails', async (c, next) => {
-  const authError = requireServiceApiKey(c.env, c.req.raw);
-  if (authError) return authError;
-  return next();
-});
+// check-emails is protected by the global X-Internal-Key gateway check
 
 app.use('/api/v1/users', async (c, next) => {
   if (c.req.method === 'POST') {
