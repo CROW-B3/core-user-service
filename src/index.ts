@@ -68,8 +68,8 @@ app.use('/api/v1/*', async (c, next) => {
   if (!c.env.INTERNAL_GATEWAY_KEY) {
     return c.json({ error: 'Service unavailable' }, 503);
   }
-  const key = c.req.header('X-Internal-Key');
-  if (!key || key !== c.env.INTERNAL_GATEWAY_KEY) {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (!internalKey || internalKey !== c.env.INTERNAL_GATEWAY_KEY) {
     return c.json(
       { error: 'Unauthorized', message: 'Authentication required' },
       401
@@ -94,17 +94,19 @@ app.openapi(HelloWorldRoute, c => {
   return c.json({ text: 'Hello Hono!' });
 });
 
-// Service-to-service write endpoints — require X-Service-API-Key matching a known key
-function requireServiceApiKey(env: Environment, req: Request): Response | null {
+function requireServiceApiKey(
+  environment: Environment,
+  request: Request
+): Response | null {
   const knownKeys = new Set(
     [
-      env.SERVICE_API_KEY_AUTH,
-      env.SERVICE_API_KEY_ORGANIZATION,
-      env.SERVICE_API_KEY_BILLING,
+      environment.SERVICE_API_KEY_AUTH,
+      environment.SERVICE_API_KEY_ORGANIZATION,
+      environment.SERVICE_API_KEY_BILLING,
     ].filter(Boolean)
   );
-  const provided = req.headers.get('X-Service-API-Key');
-  if (!provided || !knownKeys.has(provided)) {
+  const providedKey = request.headers.get('X-Service-API-Key');
+  if (!providedKey || !knownKeys.has(providedKey)) {
     return Response.json(
       { error: 'Unauthorized', message: 'Service authentication required' },
       { status: 401 }
@@ -161,7 +163,6 @@ app.post('/api/v1/billing-builders/:id/finalize', async c => {
 
   console.warn('Finalizing billing-builder:', { builderId, body });
 
-  // Return the finalized billing record
   const billingId = crypto.randomUUID();
   return c.json(
     {
@@ -177,16 +178,14 @@ app.get('/api/v1/users/by-auth-id/:authId', async c => {
   const authId = c.req.param('authId');
   const database = drizzle(c.env.DB, { schema });
 
-  // Allow service-to-service calls identified by X-Service-API-Key or X-Internal-Key.
-  // For user-initiated calls (Bearer JWT), restrict to own identity: JWT sub must match authId.
-  // If neither credential is present, reject with 401 (fail-closed).
-  const isServiceCall =
-    !!c.req.header('X-Service-API-Key') ||
-    (!!c.req.header('X-Internal-Key') &&
-      c.req.header('X-Internal-Key') === c.env.INTERNAL_GATEWAY_KEY);
+  const hasServiceApiKey = !!c.req.header('X-Service-API-Key');
+  const hasInternalKey =
+    !!c.req.header('X-Internal-Key') &&
+    c.req.header('X-Internal-Key') === c.env.INTERNAL_GATEWAY_KEY;
+  const isServiceCall = hasServiceApiKey || hasInternalKey;
   if (!isServiceCall) {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
+    const authorizationHeader = c.req.header('Authorization');
+    if (!authorizationHeader?.startsWith('Bearer ')) {
       return c.json(
         { error: 'Unauthorized', message: 'Authentication required' },
         401
@@ -197,7 +196,7 @@ app.get('/api/v1/users/by-auth-id/:authId', async c => {
       const jwks = createRemoteJWKSet(
         new URL(`${c.env.AUTH_SERVICE_URL}/api/v1/auth/jwks`)
       );
-      const { payload } = await jwtVerify(authHeader.slice(7), jwks);
+      const { payload } = await jwtVerify(authorizationHeader.slice(7), jwks);
       if (payload.sub !== authId) {
         return c.json({ error: 'Forbidden', message: 'Access denied' }, 403);
       }
@@ -362,9 +361,6 @@ app.openapi(UploadProfilePictureRoute, async context => {
       404
     );
 
-  // Authorization: allow if system token, if the authenticated user owns this
-  // profile (JWT sub is betterAuthUserId, not internal ID), or if the requester
-  // belongs to the same organization.
   if (!context.get('isSystem')) {
     const isOwner = jwtPayload?.sub === user.betterAuthUserId;
     const orgFromJwt = jwtPayload?.organizationId as string | undefined;
@@ -395,8 +391,8 @@ app.openapi(UploadProfilePictureRoute, async context => {
       400
     );
 
-  const maximumFileSizeInBytes = 5 * 1024 * 1024;
-  if (file.size > maximumFileSizeInBytes)
+  const maxFileSizeBytes = 5 * 1024 * 1024;
+  if (file.size > maxFileSizeBytes)
     return context.json(
       {
         error: {
@@ -447,10 +443,6 @@ app.openapi(UpdateUserProfileRoute, async context => {
       404
     );
 
-  // Authorization: allow if system token, if the authenticated user owns this
-  // profile (JWT sub is betterAuthUserId, not internal ID), or if the requester
-  // belongs to the same organization (via JWT claim or X-Organization-Id header
-  // injected by the API gateway from the active session).
   if (!context.get('isSystem')) {
     const isOwner = jwtPayload?.sub === user.betterAuthUserId;
     const orgFromJwt = jwtPayload?.organizationId as string | undefined;
@@ -692,7 +684,6 @@ app.openapi(GetUserPermissionsRoute, async context => {
     return context.json({ error: 'User not found' }, 404);
   }
 
-  // Enforce ownership or same-org: fail closed if neither condition is met
   if (!context.get('isSystem')) {
     const jwtPayload = context.get('jwtPayload');
     const callerBetterAuthId = jwtPayload?.sub as string | undefined;
