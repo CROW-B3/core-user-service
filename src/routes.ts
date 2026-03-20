@@ -311,6 +311,31 @@ export const GetCurrentUserRoute = createRoute({
   },
 });
 
+export const UpdateCurrentUserProfileRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/users/me',
+  request: {
+    body: {
+      content: { 'application/json': { schema: UpdateUserProfileSchema } },
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: UserSchema } },
+      description: 'Current user profile updated successfully',
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    404: {
+      description: 'User not found',
+    },
+    500: {
+      description: 'Failed to update user profile',
+    },
+  },
+});
+
 export const SearchUsersByEmailPrefixRoute = createRoute({
   method: 'get',
   path: '/api/v1/users/search-email',
