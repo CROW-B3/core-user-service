@@ -179,6 +179,22 @@ export const UploadProfilePictureRoute = createRoute({
   },
 });
 
+export const GetProfilePictureRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/users/{id}/profile-picture',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Profile picture image',
+    },
+    404: {
+      description: 'User or profile picture not found',
+    },
+  },
+});
+
 export const UpdateUserProfileRoute = createRoute({
   method: 'patch',
   path: '/api/v1/users/{id}/profile',
