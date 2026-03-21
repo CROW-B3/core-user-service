@@ -123,9 +123,8 @@ app.post('/api/v1/user-builders', async c => {
 });
 
 // Alias for gateway-routed path (/api/v1/users/* → user service receives /api/v1/users/*)
+// Called from frontend during invite signup — internal key already validated by global middleware
 app.on('POST', '/api/v1/users/user-builders', async c => {
-  const authError = requireServiceApiKey(c.env, c.req.raw);
-  if (authError) return authError;
   const builderId = crypto.randomUUID();
   return c.json({ id: builderId }, 201);
 });
@@ -156,10 +155,8 @@ app.post('/api/v1/user-builders/:id/finalize', async c => {
   return c.json(user, 200);
 });
 
-// Alias for gateway-routed path
+// Alias for gateway-routed path — internal key already validated by global middleware
 app.on('POST', '/api/v1/users/user-builders/:id/finalize', async c => {
-  const authError = requireServiceApiKey(c.env, c.req.raw);
-  if (authError) return authError;
   const builderId = c.req.param('id');
   const body = await c.req.json();
   const { email, name, role, authId } = body;
