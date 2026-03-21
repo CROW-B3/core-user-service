@@ -112,22 +112,29 @@ export const createUser = async (
   const currentTimestamp = Date.now();
   const permissions = fetchPermissionsForRole(role, modules);
 
-  await database.insert(schema.user).values({
-    id: userId,
-    betterAuthUserId,
-    organizationId,
-    email,
-    name,
-    permissions: JSON.stringify(permissions),
-    status: 'active',
-    role,
-    onboardingId,
-    profilePictureUrl: null,
-    createdAt: currentTimestamp,
-    updatedAt: currentTimestamp,
-  });
+  await database
+    .insert(schema.user)
+    .values({
+      id: userId,
+      betterAuthUserId,
+      organizationId,
+      email,
+      name,
+      permissions: JSON.stringify(permissions),
+      status: 'active',
+      role,
+      onboardingId,
+      profilePictureUrl: null,
+      createdAt: currentTimestamp,
+      updatedAt: currentTimestamp,
+    })
+    .onConflictDoNothing();
 
-  return (await fetchUserById(database, userId))!;
+  const user =
+    (await fetchUserById(database, userId)) ??
+    (await fetchUserByBetterAuthId(database, betterAuthUserId));
+
+  return user!;
 };
 
 export const activateUser = async (
