@@ -77,7 +77,16 @@ export const uploadProfilePictureToR2 = async (
     },
   });
 
-  return `https://pub-YOUR_R2_PUBLIC_URL/${storageKey}`;
+  // Return the storage key; the profile picture is served via
+  // GET /api/v1/users/:id/profile-picture which reads from R2.
+  return storageKey;
+};
+
+export const getProfilePictureFromR2 = async (
+  bucket: R2Bucket,
+  storageKey: string
+): Promise<R2ObjectBody | null> => {
+  return bucket.get(storageKey);
 };
 
 export const updateUserProfile = async (
