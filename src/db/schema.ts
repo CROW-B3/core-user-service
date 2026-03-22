@@ -11,6 +11,9 @@ export const user = sqliteTable('user', {
   permissions: text('permissions').notNull(),
   status: text('status').notNull().default('pending'),
   role: text('role').notNull().default('member'),
+  preferences: text('preferences').default(
+    '{"emailPatternAlerts":true,"emailBillingNotices":true,"emailTeamInvites":true,"emailWeeklyDigest":true}'
+  ),
   createdAt: integer('createdAt').notNull(),
   updatedAt: integer('updatedAt').notNull(),
 });

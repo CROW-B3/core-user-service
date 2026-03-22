@@ -108,6 +108,24 @@ export const ProfilePictureUploadResponseSchema = z
   })
   .openapi('ProfilePictureUploadResponse');
 
+export const UserPreferencesSchema = z
+  .object({
+    emailPatternAlerts: z.boolean(),
+    emailBillingNotices: z.boolean(),
+    emailTeamInvites: z.boolean(),
+    emailWeeklyDigest: z.boolean(),
+  })
+  .openapi('UserPreferences');
+
+export const UpdateUserPreferencesSchema = z
+  .object({
+    emailPatternAlerts: z.boolean().optional(),
+    emailBillingNotices: z.boolean().optional(),
+    emailTeamInvites: z.boolean().optional(),
+    emailWeeklyDigest: z.boolean().optional(),
+  })
+  .openapi('UpdateUserPreferences');
+
 export const CreateDirectUserSchema = z
   .object({
     email: z.string().email(),

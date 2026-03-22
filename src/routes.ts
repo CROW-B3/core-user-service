@@ -7,8 +7,10 @@ import {
   HelloWorldSchema,
   PermissionsSchema,
   ProfilePictureUploadResponseSchema,
+  UpdateUserPreferencesSchema,
   UpdateUserProfileSchema,
   UserBuilderSchema,
+  UserPreferencesSchema,
   UserSchema,
 } from './types';
 
@@ -175,6 +177,22 @@ export const UploadProfilePictureRoute = createRoute({
     },
     404: {
       description: 'User not found',
+    },
+  },
+});
+
+export const GetProfilePictureRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/users/{id}/profile-picture',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Profile picture image',
+    },
+    404: {
+      description: 'User or profile picture not found',
     },
   },
 });
@@ -365,6 +383,55 @@ export const SearchUsersByEmailPrefixRoute = createRoute({
     },
     403: {
       description: 'Missing or invalid organization context',
+    },
+  },
+});
+
+export const GetUserPreferencesRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/users/{id}/preferences',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': { schema: UserPreferencesSchema },
+      },
+      description: 'User notification preferences',
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    404: {
+      description: 'User not found',
+    },
+  },
+});
+
+export const UpdateUserPreferencesRoute = createRoute({
+  method: 'patch',
+  path: '/api/v1/users/{id}/preferences',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': { schema: UpdateUserPreferencesSchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': { schema: UserPreferencesSchema },
+      },
+      description: 'Updated user notification preferences',
+    },
+    401: {
+      description: 'Unauthorized',
+    },
+    404: {
+      description: 'User not found',
     },
   },
 });
