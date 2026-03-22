@@ -13,12 +13,14 @@ import {
   GetCurrentUserRoute,
   GetProfilePictureRoute,
   GetUserPermissionsRoute,
+  GetUserPreferencesRoute,
   GetUserRoute,
   GetUsersByOrganizationRoute,
   HelloWorldRoute,
   OnboardUserRoute,
   SearchUsersByEmailPrefixRoute,
   UpdateCurrentUserProfileRoute,
+  UpdateUserPreferencesRoute,
   UpdateUserProfileRoute,
   UploadProfilePictureRoute,
 } from './routes';
@@ -30,10 +32,12 @@ import {
   createUserRecord,
   fetchUserByBetterAuthId,
   fetchUserById,
+  fetchUserPreferences,
   fetchUsersByOrganizationId,
   findExistingEmailAddresses,
   getProfilePictureFromR2,
   searchUsersByEmailPrefix,
+  updateUserPreferences,
   updateUserProfile,
   uploadProfilePictureToR2,
   validateUserCreationPayload,
@@ -722,6 +726,84 @@ app.openapi(OnboardUserRoute, async context => {
     );
   }
   return context.json(formatUserResponse(updatedUser), 200);
+});
+
+app.use('/api/v1/users/:id/preferences', async (c, next) =>
+  createJWTMiddleware(c.env)(c, next)
+);
+
+app.openapi(GetUserPreferencesRoute, async context => {
+  const jwtPayload = context.get('jwtPayload');
+  const { id } = context.req.valid('param');
+  const database = drizzle(context.env.DB, { schema });
+
+  const result = await fetchUserPreferences(database, id);
+  if (!result)
+    return context.json(
+      {
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
+
+  if (!context.get('isSystem')) {
+    const isOwner = jwtPayload?.sub === result.user.betterAuthUserId;
+    if (!isOwner)
+      return context.json(
+        { error: 'Forbidden', message: 'Access denied' },
+        403
+      );
+  }
+
+  return context.json(result.preferences);
+});
+
+app.openapi(UpdateUserPreferencesRoute, async context => {
+  const jwtPayload = context.get('jwtPayload');
+  const { id } = context.req.valid('param');
+  const database = drizzle(context.env.DB, { schema });
+
+  const existing = await fetchUserById(database, id);
+  if (!existing)
+    return context.json(
+      {
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      404
+    );
+
+  if (!context.get('isSystem')) {
+    const isOwner = jwtPayload?.sub === existing.betterAuthUserId;
+    if (!isOwner)
+      return context.json(
+        { error: 'Forbidden', message: 'Access denied' },
+        403
+      );
+  }
+
+  const body = context.req.valid('json');
+  const updated = await updateUserPreferences(database, id, body);
+  if (!updated)
+    return context.json(
+      {
+        error: {
+          code: 'UPDATE_FAILED',
+          message: 'Failed to update preferences',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      500
+    );
+
+  return context.json(updated);
 });
 
 app.use('/api/v1/users/:id', async (c, next) =>
