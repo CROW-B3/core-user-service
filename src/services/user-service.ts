@@ -249,6 +249,58 @@ export const createUserRecord = async (
   return (await fetchUserById(database, userId))!;
 };
 
+export interface UserPreferences {
+  emailPatternAlerts: boolean;
+  emailBillingNotices: boolean;
+  emailTeamInvites: boolean;
+  emailWeeklyDigest: boolean;
+}
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+  emailPatternAlerts: true,
+  emailBillingNotices: true,
+  emailTeamInvites: true,
+  emailWeeklyDigest: true,
+};
+
+export const parseUserPreferences = (raw: string | null): UserPreferences => {
+  if (!raw) return { ...DEFAULT_PREFERENCES };
+  try {
+    const parsed = JSON.parse(raw) as Partial<UserPreferences>;
+    return { ...DEFAULT_PREFERENCES, ...parsed };
+  } catch {
+    return { ...DEFAULT_PREFERENCES };
+  }
+};
+
+export const fetchUserPreferences = async (
+  database: Database,
+  userId: string
+): Promise<{ user: User; preferences: UserPreferences } | null> => {
+  const user = await fetchUserById(database, userId);
+  if (!user) return null;
+  return { user, preferences: parseUserPreferences(user.preferences) };
+};
+
+export const updateUserPreferences = async (
+  database: Database,
+  userId: string,
+  updates: Partial<UserPreferences>
+): Promise<UserPreferences | null> => {
+  const user = await fetchUserById(database, userId);
+  if (!user) return null;
+
+  const current = parseUserPreferences(user.preferences);
+  const merged = { ...current, ...updates };
+
+  await database
+    .update(schema.user)
+    .set({ preferences: JSON.stringify(merged), updatedAt: Date.now() })
+    .where(eq(schema.user.id, userId));
+
+  return merged;
+};
+
 export const associateUserWithOrganization = async (
   database: Database,
   userId: string,
