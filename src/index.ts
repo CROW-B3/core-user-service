@@ -369,12 +369,22 @@ app.openapi(CreateDirectUserRoute, async context => {
   return context.json(formatUserResponse(user), 201);
 });
 
-app.use('/api/v1/users/:id/profile-picture', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
-app.use('/api/v1/users/:id/profile', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
+app.use('/api/v1/users/:id/profile-picture', async (c, next) => {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (internalKey && c.env.INTERNAL_GATEWAY_KEY && internalKey === c.env.INTERNAL_GATEWAY_KEY) {
+    c.set('isSystem', true);
+    return next();
+  }
+  return createJWTMiddleware(c.env)(c, next);
+});
+app.use('/api/v1/users/:id/profile', async (c, next) => {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (internalKey && c.env.INTERNAL_GATEWAY_KEY && internalKey === c.env.INTERNAL_GATEWAY_KEY) {
+    c.set('isSystem', true);
+    return next();
+  }
+  return createJWTMiddleware(c.env)(c, next);
+});
 
 app.openapi(UploadProfilePictureRoute, async context => {
   const jwtPayload = context.get('jwtPayload');
@@ -611,12 +621,20 @@ app.openapi(ReadinessCheckRoute, async c => {
   );
 });
 
-app.use('/api/v1/users/me', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
-app.use('/api/v1/users/onboard', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
+app.use('/api/v1/users/me', async (c, next) => {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (internalKey && c.env.INTERNAL_GATEWAY_KEY && internalKey === c.env.INTERNAL_GATEWAY_KEY) {
+    return next();
+  }
+  return createJWTMiddleware(c.env)(c, next);
+});
+app.use('/api/v1/users/onboard', async (c, next) => {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (internalKey && c.env.INTERNAL_GATEWAY_KEY && internalKey === c.env.INTERNAL_GATEWAY_KEY) {
+    return next();
+  }
+  return createJWTMiddleware(c.env)(c, next);
+});
 
 app.openapi(GetCurrentUserRoute, async context => {
   const jwtPayload = context.get('jwtPayload');
@@ -728,9 +746,14 @@ app.openapi(OnboardUserRoute, async context => {
   return context.json(formatUserResponse(updatedUser), 200);
 });
 
-app.use('/api/v1/users/:id/preferences', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
+app.use('/api/v1/users/:id/preferences', async (c, next) => {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (internalKey && c.env.INTERNAL_GATEWAY_KEY && internalKey === c.env.INTERNAL_GATEWAY_KEY) {
+    c.set('isSystem', true);
+    return next();
+  }
+  return createJWTMiddleware(c.env)(c, next);
+});
 
 app.openapi(GetUserPreferencesRoute, async context => {
   const jwtPayload = context.get('jwtPayload');
@@ -806,12 +829,22 @@ app.openapi(UpdateUserPreferencesRoute, async context => {
   return context.json(updated);
 });
 
-app.use('/api/v1/users/:id', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
-app.use('/api/v1/users/:id/permissions', async (c, next) =>
-  createJWTMiddleware(c.env)(c, next)
-);
+app.use('/api/v1/users/:id', async (c, next) => {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (internalKey && c.env.INTERNAL_GATEWAY_KEY && internalKey === c.env.INTERNAL_GATEWAY_KEY) {
+    c.set('isSystem', true);
+    return next();
+  }
+  return createJWTMiddleware(c.env)(c, next);
+});
+app.use('/api/v1/users/:id/permissions', async (c, next) => {
+  const internalKey = c.req.header('X-Internal-Key');
+  if (internalKey && c.env.INTERNAL_GATEWAY_KEY && internalKey === c.env.INTERNAL_GATEWAY_KEY) {
+    c.set('isSystem', true);
+    return next();
+  }
+  return createJWTMiddleware(c.env)(c, next);
+});
 
 app.openapi(GetUserRoute, async context => {
   const database = drizzle(context.env.DB, { schema });
